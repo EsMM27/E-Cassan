@@ -205,3 +205,47 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# E-Cassan Specific
+# Data and cache
+data/
+data/cache/
+*.csv
+*.json.bak
+
+# Logs
+logs/
+*.log
+
+# Outputs
+outputs/
+outputs/signals/
+outputs/reports/
+
+# Models (if downloaded locally)
+models/
+
+# API keys and secrets
+.env
+.env.local
+secrets.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Word documents (project documentation should be in markdown)
+*.docx
+*.doc

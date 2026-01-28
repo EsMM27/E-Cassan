@@ -1,0 +1,102 @@
+﻿system:
+  name: E-Cassan Trading Agent System
+  version: 0.1.0
+  environment: development
+
+agents:
+  geopolitical_analyst:
+    role: geopolitical_analysis
+    description: Analyzes global events and their impact on markets
+    weight: 0.30
+    prompt_template: templates/geopolitical_agent.txt
+    
+  fundamental_analyst:
+    role: fundamental_analysis
+    description: Evaluates company fundamentals and financial health
+    weight: 0.25
+    prompt_template: templates/fundamental_agent.txt
+    
+  technical_analyst:
+    role: technical_analysis
+    description: Analyzes price movements and technical indicators
+    weight: 0.25
+    prompt_template: templates/technical_agent.txt
+    
+  sentiment_analyst:
+    role: sentiment_analysis
+    description: Extracts market sentiment from news and social media
+    weight: 0.20
+    prompt_template: templates/sentiment_agent.txt
+
+reasoning:
+  debate_rounds: 3
+  consensus_threshold: 0.8
+  max_iterations: 5
+  timeout_seconds: 300
+  
+data_sources:
+  stock_prices:
+    provider: yfinance
+    update_frequency: 1h
+    
+  news:
+    providers:
+      - newsapi
+      - finnhub
+    max_articles: 50
+    lookback_days: 7
+    
+  financials:
+    provider: alpha_vantage
+    cache_duration_hours: 24
+    
+  geopolitical:
+    sources:
+      - gdelt
+      - newsapi
+    topics:
+      - trade_policy
+      - sanctions
+      - monetary_policy
+      - political_stability
+
+#model settings
+#gpt-5.1-2025-11-13
+#gpt-4-turbo-preview
+models:
+  llm:
+    default_provider: openai
+    model_name: gpt-4-turbo-preview
+    temperature: 0.3
+    max_tokens: 2000
+# legacy settings for sentiment model
+  sentiment:
+    model_name: ProsusAI/finbert
+    device: cpu
+    batch_size: 16
+
+decision:
+  signal_types:
+    - STRONG_BUY
+    - BUY
+    - HOLD
+    - SELL
+    - STRONG_SELL
+    
+  confidence_levels:
+    high: 0.8
+    medium: 0.6
+    low: 0.4
+
+logging:
+  level: INFO
+  format: json
+  file: logs/system.log
+  max_size_mb: 100
+  backup_count: 5
+  
+output:
+  format: json
+  save_debate_logs: true
+  save_agent_reasoning: true
+  generate_report: true
