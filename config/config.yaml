@@ -9,24 +9,32 @@ agents:
     description: Analyzes global events and their impact on markets
     weight: 0.30
     prompt_template: templates/geopolitical_agent.txt
+    llm_provider: openai
+    model_name: gpt-4-turbo-preview
     
   fundamental_analyst:
     role: fundamental_analysis
     description: Evaluates company fundamentals and financial health
     weight: 0.25
     prompt_template: templates/fundamental_agent.txt
+    llm_provider: openai
+    model_name: gpt-4-turbo-preview
     
   technical_analyst:
     role: technical_analysis
     description: Analyzes price movements and technical indicators
     weight: 0.25
     prompt_template: templates/technical_agent.txt
+    llm_provider: openai
+    model_name: gpt-4-turbo-preview
     
   sentiment_analyst:
     role: sentiment_analysis
     description: Extracts market sentiment from news and social media
     weight: 0.20
     prompt_template: templates/sentiment_agent.txt
+    llm_provider: ollama
+    model_name: deepseek-r1:14b
 
 reasoning:
   debate_rounds: 3
@@ -65,15 +73,12 @@ data_sources:
 #gpt-4-turbo-preview
 models:
   llm:
-    default_provider: openai
-    model_name: gpt-4-turbo-preview
+    default_provider: ollama 
+    model_name: deepseek-r1:14b  # For Ollama: deepseek-r1:8b, deepseek-r1:32b, deepseek-r1:14b
     temperature: 0.3
     max_tokens: 2000
-# legacy settings for sentiment model
-  sentiment:
-    model_name: ProsusAI/finbert
-    device: cpu
-    batch_size: 16
+    # Ollama-specific settings
+    ollama_base_url: http://localhost:11434  # Default Ollama URL
 
 decision:
   signal_types:

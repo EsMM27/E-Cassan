@@ -1,98 +1,33 @@
 """
 Sentiment Agent
-Analyzes market sentiment from news and social media
-currently uses FinBERT for sentiment analysis
-change to my own model later
+Analyzes market sentiment from news and social media.
 """
 
 from typing import Dict, Any, List
 from loguru import logger
 
 from .base_agent import BaseAgent, AgentResponse
-from ..config import config
 
 
 class SentimentAgent(BaseAgent):
     """Agent specialized in sentiment analysis"""
     
-    def __init__(self, use_finbert: bool = False):
+    def __init__(self):
         super().__init__(
             name="sentiment_analyst",
             role="Sentiment Analyst"
         )
-        
-        self.use_finbert = use_finbert  # Disabled by default
-        self.sentiment_model = None
-        self.tokenizer = None
-
-    
-    def _initialize_finbert(self):
-        """Initialize FinBERT model for sentiment analysis"""
-        try:
-            model_name = config.model_config.get('sentiment', {}).get('model_name', 'ProsusAI/finbert')
-            device = config.model_config.get('sentiment', {}).get('device', 'cpu')
-            
-            logger.info(f"Loading FinBERT model: {model_name}")
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self.sentiment_model = AutoModelForSequenceClassification.from_pretrained(model_name)
-            
-            # Move to GPU if available
-            if device == 'cuda' and torch.cuda.is_available():
-                self.sentiment_model = self.sentiment_model.cuda()
-                logger.info("FinBERT loaded on CUDA")
-            else:
-                logger.info("FinBERT loaded on CPU")
-        
-        except Exception as e:
-            logger.warning(f"Failed to load FinBERT: {e}. Will use LLM-based sentiment.")
-            self.use_finbert = False
-    
-    def analyze_text_sentiment(self, text: str) -> Dict[str, float]:
-        """
-        Analyze sentiment of a single text using FinBERT
-        
-        Args:
-            text: Text to analyze
-        
-        Returns:
-            Dict with sentiment scores {positive, negative, neutral}
-        """
-        if not self.use_finbert or not self.sentiment_model:
-            return {'positive': 0.33, 'negative': 0.33, 'neutral': 0.34}
-        
-        try:
-            inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512, padding=True)
-            
-            if torch.cuda.is_available() and next(self.sentiment_model.parameters()).is_cuda:
-                inputs = {k: v.cuda() for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                outputs = self.sentiment_model(**inputs)
-            
-            # Get probabilities
-            probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            scores = probs.cpu().numpy()[0]
-            
-            # FinBERT outputs: [positive, negative, neutral]
-            return {
-                'positive': float(scores[0]),
-                'negative': float(scores[1]),
-                'neutral': float(scores[2])
-            }
-        
-        except Exception as e:
-            logger.error(f"Error in sentiment analysis: {e}")
-            return {'positive': 0.33, 'negative': 0.33, 'neutral': 0.34}
     
     def analyze_articles_sentiment(self, articles: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Analyze sentiment across multiple news articles
+        Provide a lightweight sentiment summary placeholder.
+        The LLM performs the actual sentiment analysis.
         
         Args:
             articles: List of article dictionaries
         
         Returns:
-            Aggregated sentiment analysis
+            Aggregated sentiment summary
         """
         if not articles:
             return {
@@ -104,58 +39,15 @@ class SentimentAgent(BaseAgent):
                 'article_sentiments': []
             }
         
-        article_sentiments = []
-        
-        for article in articles[:20]:  # Limit to 20 articles for performance
-            title = article.get('title', '')
-            description = article.get('description', '')
-            text = f"{title}. {description}"
-            
-            if len(text.strip()) < 10:
-                continue
-            
-            sentiment = self.analyze_text_sentiment(text)
-            article_sentiments.append({
-                'title': title,
-                'sentiment': sentiment,
-                'dominant': max(sentiment.items(), key=lambda x: x[1])[0]
-            })
-        
-        # Aggregate sentiments
-        if not article_sentiments:
-            return {
-                'overall_sentiment': 'neutral',
-                'sentiment_score': 0.0,
-                'positive_ratio': 0.0,
-                'negative_ratio': 0.0,
-                'neutral_ratio': 0.0,
-                'article_sentiments': []
-            }
-        
-        total = len(article_sentiments)
-        positive_count = sum(1 for a in article_sentiments if a['dominant'] == 'positive')
-        negative_count = sum(1 for a in article_sentiments if a['dominant'] == 'negative')
-        neutral_count = sum(1 for a in article_sentiments if a['dominant'] == 'neutral')
-        
-        # Calculate overall sentiment score (-1 to 1)
-        sentiment_score = (positive_count - negative_count) / total if total > 0 else 0.0
-        
-        # Determine overall sentiment
-        if sentiment_score > 0.2:
-            overall = 'positive'
-        elif sentiment_score < -0.2:
-            overall = 'negative'
-        else:
-            overall = 'neutral'
-        
+        total = len(articles[:20])
         return {
-            'overall_sentiment': overall,
-            'sentiment_score': sentiment_score,
-            'positive_ratio': positive_count / total,
-            'negative_ratio': negative_count / total,
-            'neutral_ratio': neutral_count / total,
+            'overall_sentiment': 'neutral',
+            'sentiment_score': 0.0,
+            'positive_ratio': 0.0,
+            'negative_ratio': 0.0,
+            'neutral_ratio': 0.0,
             'total_analyzed': total,
-            'article_sentiments': article_sentiments
+            'article_sentiments': []
         }
     
     def get_system_prompt(self) -> str:
@@ -282,22 +174,5 @@ Be specific about:
             )
     
     def format_user_prompt_with_sentiment(self, data: Dict[str, Any]) -> str:
-        """Format user prompt with sentiment analysis results"""
-        sentiment_data = data.get('sentiment_analysis', {})
-        
-        base_prompt = self.format_user_prompt(data)
-        
-        sentiment_section = f"""
-
-## Automated Sentiment Analysis Results
-- Overall Sentiment: {sentiment_data.get('overall_sentiment', 'neutral').upper()}
-- Sentiment Score: {sentiment_data.get('sentiment_score', 0):.2f} (range: -1 to +1)
-- Positive Articles: {sentiment_data.get('positive_ratio', 0):.1%}
-- Negative Articles: {sentiment_data.get('negative_ratio', 0):.1%}
-- Neutral Articles: {sentiment_data.get('neutral_ratio', 0):.1%}
-- Total Articles Analyzed: {sentiment_data.get('total_analyzed', 0)}
-
-Use this quantitative sentiment analysis along with your qualitative interpretation of the news content.
-"""
-        
-        return base_prompt + sentiment_section
+        """Format user prompt without automated sentiment heuristics"""
+        return self.format_user_prompt(data)

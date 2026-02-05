@@ -5,6 +5,7 @@ Collects stock price data, technical indicators, and historical information
 
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
+import time
 import yfinance as yf
 import pandas as pd
 import ta
@@ -39,6 +40,7 @@ class StockDataCollector:
         """
         try:
             logger.info(f"Fetching stock data for {ticker}")
+            time.sleep(1)  # Rate limiting: wait 1 second between API calls
             stock = yf.Ticker(ticker)
             df = stock.history(period=period, interval=interval)
             
@@ -116,6 +118,7 @@ class StockDataCollector:
             Dictionary with company information
         """
         try:
+            time.sleep(1)  # Rate limiting: wait 1 second between API calls
             stock = yf.Ticker(ticker)
             info = stock.info
             

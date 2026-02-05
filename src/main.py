@@ -21,14 +21,12 @@ class ECassanSystem:
     
     def __init__(
         self,
-        use_finbert: bool = True,
         log_level: str = "INFO"
     ):
         """
         Initialize the E-Cassan system
         
         Args:
-            use_finbert: Whether to use FinBERT for sentiment analysis
             log_level: Logging level
         """
         # Configure logging
@@ -52,7 +50,7 @@ class ECassanSystem:
         # Initialize components
         self.data_manager = DataIngestionManager()
         self.data_pipeline = DataPipeline()
-        self.agents = AgentFactory.create_all_agents(use_finbert=use_finbert)
+        self.agents = AgentFactory.create_all_agents()
         self.reasoning_logger = ReasoningLogger()
         self.debate_manager = DebateManager(self.agents, self.reasoning_logger)
         self.consensus_builder = ConsensusBuilder()
@@ -278,8 +276,7 @@ class ECassanSystem:
             'config': {
                 'max_debate_rounds': config.reasoning_config.get('max_debate_rounds'),
                 'consensus_threshold': config.reasoning_config.get('consensus_threshold'),
-                'llm_model': config.model_config.get('llm', {}).get('model_name'),
-                'sentiment_model': config.model_config.get('sentiment', {}).get('model_name')
+                'llm_model': config.model_config.get('llm', {}).get('model_name')
             }
         }
 
@@ -293,14 +290,12 @@ def main():
     parser.add_argument('--company-name', help='Company name (optional)')
     parser.add_argument('--period', default='1mo', help='Period for stock data (default: 1mo)')
     parser.add_argument('--news-days', type=int, default=7, help='Days to look back for news (default: 7)')
-    parser.add_argument('--no-finbert', action='store_true', help='Disable FinBERT sentiment analysis')
     parser.add_argument('--log-level', default='INFO', help='Logging level (default: INFO)')
     
     args = parser.parse_args()
     
     # Initialize system
     system = ECassanSystem(
-        use_finbert=not args.no_finbert,
         log_level=args.log_level
     )
     

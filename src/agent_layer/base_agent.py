@@ -53,11 +53,11 @@ class BaseAgent(ABC):
         self.weight = agent_config.get('weight', 0.25)
         self.description = agent_config.get('description', role)
         
-        # LLM configuration
-        self.llm_provider = llm_provider or config.model_config.get('llm', {}).get('default_provider', 'openai')
-        self.model_name = model_name or config.model_config.get('llm', {}).get('model_name', 'gpt-4-turbo-preview')
+        # LLM configuration - check for agent-specific settings first, then global defaults
+        self.llm_provider = llm_provider or agent_config.get('llm_provider') or config.model_config.get('llm', {}).get('default_provider', 'openai')
+        self.model_name = model_name or agent_config.get('model_name') or config.model_config.get('llm', {}).get('model_name', 'gpt-4-turbo-preview')
         
-        logger.info(f"Initialized {self.name} agent with weight {self.weight}")
+        logger.info(f"Initialized {self.name} agent with weight {self.weight}, provider={self.llm_provider}, model={self.model_name}")
     
     @abstractmethod
     def analyze(self, data: Dict[str, Any]) -> AgentResponse:
@@ -143,6 +143,8 @@ Format your response as JSON with the following structure:
             return self._call_openai(system_prompt, user_prompt)
         elif self.llm_provider == 'anthropic':
             return self._call_anthropic(system_prompt, user_prompt)
+        elif self.llm_provider == 'ollama':
+            return self._call_ollama(system_prompt, user_prompt)
         else:
             raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
     
@@ -202,6 +204,31 @@ Format your response as JSON with the following structure:
         
         except Exception as e:
             logger.error(f"Error calling Anthropic API: {e}")
+            raise
+    
+    def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
+        """Call local Ollama instance (DeepSeek, Llama, etc.)"""
+        try:
+            import ollama
+            
+            ollama_base_url = config.model_config.get('llm', {}).get('ollama_base_url', 'http://localhost:11434')
+            
+            # Create client with custom base URL if specified
+            client = ollama.Client(host=ollama_base_url)
+            
+            response = client.chat(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                stream=False
+            )
+            
+            return response.get('message', {}).get('content', '')
+        
+        except Exception as e:
+            logger.error(f"Error calling Ollama/DeepSeek: {e}")
             raise
     
     def parse_llm_response(self, response_text: str) -> Dict[str, Any]:

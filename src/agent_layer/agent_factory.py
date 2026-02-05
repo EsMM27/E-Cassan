@@ -48,12 +48,9 @@ class AgentFactory:
         return agent_class(**kwargs)
     
     @staticmethod
-    def create_all_agents(use_finbert: bool = True) -> List[BaseAgent]:
+    def create_all_agents() -> List[BaseAgent]:
         """
         Create all available agents
-        
-        Args:
-            use_finbert: Whether to use FinBERT for sentiment agent
         
         Returns:
             List of all agent instances
@@ -64,7 +61,7 @@ class AgentFactory:
             GeopoliticalAgent(),
             FundamentalAgent(),
             TechnicalAgent(),
-            SentimentAgent(use_finbert=use_finbert)
+            SentimentAgent()
         ]
         
         logger.info(f"Created {len(agents)} agents")
