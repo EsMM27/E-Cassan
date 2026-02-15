@@ -18,7 +18,7 @@ class AgentResponse(BaseModel):
     agent_role: str
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     analysis: str
-    recommendation: str  # BUY, SELL, HOLD
+    recommendation: str  # BUY, SELL, SHORT, HOLD
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str
     key_points: list[str]
@@ -109,16 +109,22 @@ Please analyze the following information for {company_name} ({ticker}):
 
 Based on this information and your role as a {self.role}, provide:
 1. A comprehensive analysis
-2. Your recommendation (BUY, SELL, or HOLD)
+2. Your recommendation (BUY, SELL, SHORT, or HOLD)
 3. Your confidence level (0.0 to 1.0)
 4. Detailed reasoning for your recommendation
 5. Key points that support your analysis (list 3-5 points)
 6. Potential risks or concerns (list 2-4 risks)
 
+Recommendation options:
+- BUY: Long position - expect price to rise
+- SELL: Exit or avoid - neutral to slightly bearish
+- SHORT: Short position - expect significant price decline
+- HOLD: Maintain current position
+
 Format your response as JSON with the following structure:
 {{
     "analysis": "Your detailed analysis here",
-    "recommendation": "BUY|SELL|HOLD",
+    "recommendation": "BUY|SELL|SHORT|HOLD",
     "confidence": 0.0-1.0,
     "reasoning": "Detailed reasoning for your recommendation",
     "key_points": ["point 1", "point 2", ...],

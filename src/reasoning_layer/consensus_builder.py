@@ -53,7 +53,7 @@ class ConsensusBuilder:
         
         # Get weights (use configured weights or equal weights)
         total_weight = 0.0
-        weighted_scores = {'BUY': 0.0, 'SELL': 0.0, 'HOLD': 0.0}
+        weighted_scores = {'BUY': 0.0, 'SELL': 0.0, 'SHORT': 0.0, 'HOLD': 0.0}
         weighted_confidence = 0.0
         
         for response in responses:
@@ -90,6 +90,7 @@ class ConsensusBuilder:
             'breakdown': {
                 'BUY': sum(1 for r in responses if r.recommendation == 'BUY'),
                 'SELL': sum(1 for r in responses if r.recommendation == 'SELL'),
+                'SHORT': sum(1 for r in responses if r.recommendation == 'SHORT'),
                 'HOLD': sum(1 for r in responses if r.recommendation == 'HOLD')
             }
         }
@@ -162,7 +163,7 @@ class ConsensusBuilder:
             }
         
         # Calculate confidence-weighted scores
-        scores = {'BUY': 0.0, 'SELL': 0.0, 'HOLD': 0.0}
+        scores = {'BUY': 0.0, 'SELL': 0.0, 'SHORT': 0.0, 'HOLD': 0.0}
         total_confidence = sum(r.confidence for r in responses)
         
         if total_confidence == 0:

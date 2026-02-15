@@ -1,12 +1,13 @@
 """
 Stock Data Collector
 Collects stock price data, technical indicators, and historical information
+Migrated from yfinance to Alpha Vantage + Finnhub for improved reliability
 """
 
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import time
-import yfinance as yf
+import requests
 import pandas as pd
 import ta
 from loguru import logger
@@ -20,6 +21,8 @@ class StockDataCollector:
     
     def __init__(self, cache_dir: Optional[str] = None):
         self.cache_dir = ensure_dir(cache_dir or config.settings.data_cache_dir)
+        self.alpha_vantage_key = config.settings.alpha_vantage_api_key
+        self.finnhub_key = config.settings.finnhub_api_key
     
     def get_stock_data(
         self,
@@ -28,32 +31,169 @@ class StockDataCollector:
         interval: str = "1d"
     ) -> pd.DataFrame:
         """
-        Fetch stock data from Yahoo Finance
+        Fetch stock data from Alpha Vantage
         
         Args:
             ticker: Stock ticker symbol
-            period: Time period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
-            interval: Data interval (1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo)
+            period: Time period (for compatibility, used with Finnhub fallback)
+            interval: Data interval (only 1d is reliably supported for historical data)
         
         Returns:
             DataFrame with OHLCV data
         """
+        # Try Alpha Vantage first
+        data = self._get_stock_data_alpha_vantage(ticker)
+        
+        # Fallback to Finnhub if Alpha Vantage fails
+        if data.empty and self.finnhub_key:
+            logger.warning(f"Alpha Vantage failed for {ticker}, trying Finnhub...")
+            data = self._get_stock_data_finnhub(ticker)
+        
+        if data.empty:
+            logger.warning(f"No data retrieved for {ticker}")
+        else:
+            logger.info(f"Retrieved {len(data)} data points for {ticker}")
+        
+        return data
+    
+    def _get_stock_data_alpha_vantage(self, ticker: str) -> pd.DataFrame:
+        """Fetch stock data from Alpha Vantage TIME_SERIES_DAILY endpoint"""
+        if not self.alpha_vantage_key:
+            logger.warning("Alpha Vantage API key not configured")
+            return pd.DataFrame()
+        
         try:
-            logger.info(f"Fetching stock data for {ticker}")
-            time.sleep(1)  # Rate limiting: wait 1 second between API calls
-            stock = yf.Ticker(ticker)
-            df = stock.history(period=period, interval=interval)
+            time.sleep(0.2)  # Rate limiting
+            url = "https://www.alphavantage.co/query"
+            params = {
+                'function': 'TIME_SERIES_DAILY',
+                'symbol': ticker,
+                'apikey': self.alpha_vantage_key,
+                'outputsize': 'full'
+            }
             
-            if df.empty:
-                logger.warning(f"No data retrieved for {ticker}")
+            logger.debug(f"Requesting Alpha Vantage for {ticker}")
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Check for various error/limit responses from Alpha Vantage
+            if 'Error Message' in data:
+                logger.error(f"Alpha Vantage error: {data['Error Message']}")
                 return pd.DataFrame()
             
-            logger.info(f"Retrieved {len(df)} data points for {ticker}")
+            if 'Information' in data:
+                logger.warning(f"Alpha Vantage rate limit hit: {data['Information']}")
+                logger.warning("Suggestion: Free tier limited to 5 calls/min. Increase delay or use API key with more quota")
+                return pd.DataFrame()
+            
+            if 'Note' in data:
+                logger.warning(f"Alpha Vantage note: {data['Note']}")
+                return pd.DataFrame()
+            
+            if 'Time Series (Daily)' not in data:
+                logger.error(f"Unexpected response format from Alpha Vantage for {ticker}")
+                logger.debug(f"Response keys: {list(data.keys())}")
+                logger.debug(f"Full response (first 500 chars): {str(data)[:500]}")
+                
+                # Check if it's a valid response but just empty
+                if 'Meta Data' in data:
+                    logger.warning(f"Got metadata but no time series data for {ticker}")
+                
+                return pd.DataFrame()
+            
+            # Parse time series data
+            time_series = data['Time Series (Daily)']
+            
+            if not time_series:
+                logger.warning(f"Empty time series for {ticker}")
+                return pd.DataFrame()
+            
+            df = pd.DataFrame.from_dict(time_series, orient='index')
+            
+            # Rename columns to match expected format
+            df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            
+            # Convert to numeric types
+            for col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Sort by date (oldest first) then reverse back to newest first
+            df.index = pd.to_datetime(df.index)
+            df = df.sort_index(ascending=False)
+            
+            # Keep last 30 days of data for default analysis
+            df = df.head(30)
+            
+            logger.info(f"Successfully retrieved {len(df)} data points from Alpha Vantage for {ticker}")
             return df
         
-        except Exception as e:
-            logger.error(f"Error fetching stock data for {ticker}: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error fetching stock data from Alpha Vantage for {ticker}: {e}")
             return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"Error parsing Alpha Vantage data for {ticker}: {e}")
+            import traceback
+            logger.debug(f"Traceback: {traceback.format_exc()}")
+            return pd.DataFrame()
+    
+    def _get_stock_data_finnhub(self, ticker: str) -> pd.DataFrame:
+        """Fetch stock data from Finnhub as fallback"""
+        if not self.finnhub_key:
+            logger.warning("Finnhub API key not configured")
+            return pd.DataFrame()
+        
+        try:
+            time.sleep(0.2)  # Rate limiting
+            url = "https://finnhub.io/api/v1/stock/candle"
+            
+            # Calculate date range (last 30 days)
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=30)
+            
+            params = {
+                'symbol': ticker,
+                'resolution': 'D',  # Daily
+                'from': int(start_date.timestamp()),
+                'to': int(end_date.timestamp()),
+                'token': self.finnhub_key
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('s') == 'no_data':
+                logger.warning(f"No data available from Finnhub for {ticker}")
+                return pd.DataFrame()
+            
+            # Parse candlestick data
+            if 't' not in data or not data['t']:
+                logger.error(f"Unexpected response format from Finnhub for {ticker}")
+                return pd.DataFrame()
+            
+            df = pd.DataFrame({
+                'timestamp': pd.to_datetime(data['t'], unit='s'),
+                'Open': data['o'],
+                'High': data['h'],
+                'Low': data['l'],
+                'Close': data['c'],
+                'Volume': data['v']
+            })
+            
+            df.set_index('timestamp', inplace=True)
+            df = df.sort_index(ascending=False)
+            
+            logger.info(f"Successfully retrieved {len(df)} data points from Finnhub for {ticker}")
+            return df
+        
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error fetching stock data from Finnhub for {ticker}: {e}")
+            return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"Error parsing Finnhub data for {ticker}: {e}")
+            return pd.DataFrame()
+    
     
     def calculate_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -109,7 +249,7 @@ class StockDataCollector:
     
     def get_company_info(self, ticker: str) -> Dict[str, Any]:
         """
-        Get company information
+        Get company information from Alpha Vantage with Finnhub fallback
         
         Args:
             ticker: Stock ticker symbol
@@ -117,76 +257,162 @@ class StockDataCollector:
         Returns:
             Dictionary with company information
         """
+        # Try Alpha Vantage first
+        company_data = self._get_company_info_alpha_vantage(ticker)
+        
+        # Fallback to Finnhub if Alpha Vantage fails
+        if not company_data or 'error' in company_data:
+            if self.finnhub_key:
+                logger.warning(f"Alpha Vantage failed for {ticker}, trying Finnhub...")
+                company_data = self._get_company_info_finnhub(ticker)
+            else:
+                company_data = {'ticker': ticker, 'error': 'No API keys configured'}
+        
+        logger.info(f"Retrieved company info for {ticker}")
+        return company_data
+    
+    def _get_company_info_alpha_vantage(self, ticker: str) -> Dict[str, Any]:
+        """Fetch company info from Alpha Vantage OVERVIEW endpoint"""
+        if not self.alpha_vantage_key:
+            logger.warning("Alpha Vantage API key not configured")
+            return {}
+        
         try:
-            time.sleep(1)  # Rate limiting: wait 1 second between API calls
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            # Extract key information
-            company_data = {
-                'ticker': ticker,
-                'name': info.get('longName', ''),
-                'sector': info.get('sector', ''),
-                'industry': info.get('industry', ''),
-                'market_cap': info.get('marketCap', 0),
-                'employees': info.get('fullTimeEmployees', 0),
-                'description': info.get('longBusinessSummary', ''),
-                'website': info.get('website', ''),
-                'current_price': info.get('currentPrice', 0),
-                'previous_close': info.get('previousClose', 0),
-                'fifty_two_week_high': info.get('fiftyTwoWeekHigh', 0),
-                'fifty_two_week_low': info.get('fiftyTwoWeekLow', 0),
-                'pe_ratio': info.get('trailingPE', 0),
-                'forward_pe': info.get('forwardPE', 0),
-                'peg_ratio': info.get('pegRatio', 0),
-                'dividend_yield': info.get('dividendYield', 0),
-                'beta': info.get('beta', 0),
-                'profit_margins': info.get('profitMargins', 0),
-                'revenue_growth': info.get('revenueGrowth', 0),
+            time.sleep(0.5)  # Increased delay to avoid rate limits
+            url = "https://www.alphavantage.co/query"
+            params = {
+                'function': 'OVERVIEW',
+                'symbol': ticker,
+                'apikey': self.alpha_vantage_key
             }
             
-            logger.info(f"Retrieved company info for {ticker}")
+            logger.debug(f"Requesting Alpha Vantage OVERVIEW for {ticker}")
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Check for various error/limit responses
+            if 'Error Message' in data:
+                logger.error(f"Alpha Vantage error: {data['Error Message']}")
+                return {}
+            
+            if 'Information' in data:
+                logger.warning(f"Alpha Vantage rate limit hit: {data['Information']}")
+                return {}
+            
+            if 'Note' in data:
+                logger.warning(f"Alpha Vantage note: {data['Note']}")
+                return {}
+            
+            if not data or data.get('Symbol') != ticker:
+                logger.warning(f"No company data found for {ticker}")
+                logger.debug(f"Response: {str(data)[:500]}")
+                return {}
+            
+            # Extract and map key information
+            company_data = {
+                'ticker': ticker,
+                'name': data.get('Name', ''),
+                'sector': data.get('Sector', ''),
+                'industry': data.get('Industry', ''),
+                'market_cap': int(data.get('MarketCapitalization', 0) or 0),
+                'employees': int(data.get('FullTimeEmployees', 0) or 0),
+                'description': data.get('Description', ''),
+                'website': data.get('Website', ''),
+                'current_price': float(data.get('AnalystTargetPrice', 0) or 0),
+                'previous_close': float(data.get('PreviousClose', 0) or 0),
+                'fifty_two_week_high': float(data.get('52WeekHigh', 0) or 0),
+                'fifty_two_week_low': float(data.get('52WeekLow', 0) or 0),
+                'pe_ratio': float(data.get('TrailingPE', 0) or 0),
+                'forward_pe': float(data.get('ForwardPE', 0) or 0),
+                'peg_ratio': float(data.get('PEGRatio', 0) or 0),
+                'dividend_yield': float(data.get('DividendYield', 0) or 0),
+                'beta': float(data.get('Beta', 0) or 0),
+                'profit_margins': float(data.get('ProfitMargin', 0) or 0),
+                'revenue_growth': float(data.get('RevenuePerShareTTM', 0) or 0),
+            }
+            
+            logger.info(f"Successfully retrieved company info from Alpha Vantage for {ticker}")
             return company_data
         
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error fetching company info from Alpha Vantage for {ticker}: {e}")
+            return {}
         except Exception as e:
-            logger.error(f"Error fetching company info for {ticker}: {e}")
-            return {'ticker': ticker, 'error': str(e)}
+            logger.error(f"Error parsing Alpha Vantage company data for {ticker}: {e}")
+            import traceback
+            logger.debug(f"Traceback: {traceback.format_exc()}")
+            return {}
+    
+    def _get_company_info_finnhub(self, ticker: str) -> Dict[str, Any]:
+        """Fetch company info from Finnhub as fallback"""
+        if not self.finnhub_key:
+            logger.warning("Finnhub API key not configured")
+            return {}
+        
+        try:
+            time.sleep(0.2)  # Rate limiting
+            url = "https://finnhub.io/api/v1/stock/profile2"
+            params = {
+                'symbol': ticker,
+                'token': self.finnhub_key
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            if not data:
+                logger.warning(f"No company data found from Finnhub for {ticker}")
+                return {}
+            
+            company_data = {
+                'ticker': ticker,
+                'name': data.get('name', ''),
+                'sector': data.get('finnhubIndustry', ''),
+                'industry': data.get('finnhubIndustry', ''),
+                'market_cap': data.get('marketCapitalization', 0) * 1_000_000 if data.get('marketCapitalization') else 0,
+                'employees': 0,  # Not available in Finnhub
+                'description': '',  # Not available in Finnhub
+                'website': data.get('weburl', ''),
+                'current_price': 0,  # Use quote endpoint separately if needed
+                'previous_close': 0,  # Use quote endpoint separately if needed
+                'fifty_two_week_high': 0,
+                'fifty_two_week_low': 0,
+                'pe_ratio': 0,
+                'forward_pe': 0,
+                'peg_ratio': 0,
+                'dividend_yield': 0,
+                'beta': 0,
+                'profit_margins': 0,
+                'revenue_growth': 0,
+            }
+            
+            logger.info(f"Successfully retrieved company info from Finnhub for {ticker}")
+            return company_data
+        
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error fetching company info from Finnhub for {ticker}: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"Error parsing Finnhub company data for {ticker}: {e}")
+            return {}
     
     def get_financial_statements(self, ticker: str) -> Dict[str, Any]:
         """
-        Get financial statements (income statement, balance sheet, cash flow)
+        Get financial statements - delegated to FinancialDataCollector
+        
+        This method is kept for backwards compatibility but returns empty dict.
+        Actual financial statements are collected by FinancialDataCollector which uses Alpha Vantage.
         
         Args:
             ticker: Stock ticker symbol
         
         Returns:
-            Dictionary with financial statements
+            Empty dictionary (financial data is collected separately by FinancialDataCollector)
         """
-        try:
-            stock = yf.Ticker(ticker)
-            
-            # Helper to convert DataFrame with Timestamp columns to JSON-serializable dict
-            def df_to_dict(df):
-                if df is None or df.empty:
-                    return {}
-                # Convert Timestamp column names to strings
-                df_copy = df.copy()
-                df_copy.columns = [str(col) for col in df_copy.columns]
-                return df_copy.to_dict()
-            
-            financials = {
-                'income_statement': df_to_dict(stock.financials) if hasattr(stock, 'financials') else {},
-                'balance_sheet': df_to_dict(stock.balance_sheet) if hasattr(stock, 'balance_sheet') else {},
-                'cash_flow': df_to_dict(stock.cashflow) if hasattr(stock, 'cashflow') else {},
-                'quarterly_financials': df_to_dict(stock.quarterly_financials) if hasattr(stock, 'quarterly_financials') else {}
-            }
-            
-            logger.info(f"Retrieved financial statements for {ticker}")
-            return financials
-        
-        except Exception as e:
-            logger.error(f"Error fetching financial statements for {ticker}: {e}")
-            return {}
+        logger.info(f"Financial statements collection delegated to FinancialDataCollector for {ticker}")
+        return {}
     
     def collect_complete_stock_data(self, ticker: str, period: str = "1mo") -> Dict[str, Any]:
         """

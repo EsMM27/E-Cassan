@@ -18,7 +18,7 @@ class TradingSignal(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     
     # Core signal
-    signal: str  # STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL
+    signal: str  # STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL, SHORT, STRONG_SHORT
     confidence: float = Field(ge=0.0, le=1.0)
     consensus_level: float = Field(ge=0.0, le=1.0)
     
@@ -52,7 +52,7 @@ class SignalGenerator:
     def __init__(self):
         """Initialize signal generator"""
         self.signal_types = config.decision_config.get('signal_types', [
-            'STRONG_BUY', 'BUY', 'HOLD', 'SELL', 'STRONG_SELL'
+            'STRONG_BUY', 'BUY', 'HOLD', 'SELL', 'STRONG_SELL', 'SHORT', 'STRONG_SHORT'
         ])
         
         self.confidence_thresholds = config.decision_config.get('confidence_levels', {
@@ -73,12 +73,12 @@ class SignalGenerator:
         Determine signal strength based on confidence and consensus
         
         Args:
-            recommendation: Base recommendation (BUY/SELL/HOLD)
+            recommendation: Base recommendation (BUY/SELL/SHORT/HOLD)
             confidence: Confidence level (0-1)
             consensus_level: Level of consensus among agents (0-1)
         
         Returns:
-            Signal strength (e.g., STRONG_BUY, BUY, HOLD)
+            Signal strength (e.g., STRONG_BUY, BUY, SHORT, STRONG_SHORT, HOLD)
         """
         # High confidence and high consensus = STRONG signal
         high_threshold = self.confidence_thresholds['high']
@@ -95,6 +95,12 @@ class SignalGenerator:
                 return 'STRONG_SELL'
             else:
                 return 'SELL'
+        
+        elif recommendation == 'SHORT':
+            if confidence >= high_threshold and consensus_level >= 0.75:
+                return 'STRONG_SHORT'
+            else:
+                return 'SHORT'
         
         else:  # HOLD
             return 'HOLD'
@@ -162,8 +168,10 @@ class SignalGenerator:
         
         summary = f"{recommendation} recommendation with {confidence:.1%} confidence. "
         summary += f"Consensus level: {consensus_level:.1%}. "
-        summary += f"Agent breakdown: {breakdown['BUY']} BUY, "
-        summary += f"{breakdown['HOLD']} HOLD, {breakdown['SELL']} SELL."
+        summary += f"Agent breakdown: {breakdown.get('BUY', 0)} BUY, "
+        summary += f"{breakdown.get('HOLD', 0)} HOLD, "
+        summary += f"{breakdown.get('SELL', 0)} SELL, "
+        summary += f"{breakdown.get('SHORT', 0)} SHORT."
         
         return summary
     
@@ -229,6 +237,15 @@ class SignalGenerator:
             
             # Stop loss: 3-5% above
             stop_loss = current_price * 1.05
+        
+        elif recommendation == 'SHORT':
+            # Target: 10-25% downside (more aggressive than SELL)
+            target_pct = 0.10 + (confidence * 0.15)
+            price_target = current_price * (1 - target_pct)
+            
+            # Stop loss: 5-8% above (tighter than SELL)
+            stop_loss_pct = 0.05 + (0.03 * (1 - confidence))
+            stop_loss = current_price * (1 + stop_loss_pct)
         
         else:  # HOLD
             price_target = current_price
@@ -377,6 +394,7 @@ Agent Votes:
 - BUY: {signal.agent_breakdown.get('BUY', 0)}
 - HOLD: {signal.agent_breakdown.get('HOLD', 0)}
 - SELL: {signal.agent_breakdown.get('SELL', 0)}
+- SHORT: {signal.agent_breakdown.get('SHORT', 0)}
 
 {'=' * 80}
 KEY SUPPORTING FACTORS

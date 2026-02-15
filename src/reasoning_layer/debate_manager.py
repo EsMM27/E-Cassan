@@ -133,15 +133,25 @@ class DebateManager:
         # Group by recommendation
         buy_agents = [r for r in responses if r.recommendation == 'BUY']
         sell_agents = [r for r in responses if r.recommendation == 'SELL']
+        short_agents = [r for r in responses if r.recommendation == 'SHORT']
         hold_agents = [r for r in responses if r.recommendation == 'HOLD']
         
         # Check for conflicting recommendations
-        if len(buy_agents) > 0 and len(sell_agents) > 0:
+        if len(buy_agents) > 0 and (len(sell_agents) > 0 or len(short_agents) > 0):
+            description = f"{len(buy_agents)} agents recommend BUY while "
+            if len(sell_agents) > 0 and len(short_agents) > 0:
+                description += f"{len(sell_agents)} recommend SELL and {len(short_agents)} recommend SHORT"
+            elif len(sell_agents) > 0:
+                description += f"{len(sell_agents)} recommend SELL"
+            else:
+                description += f"{len(short_agents)} recommend SHORT"
+            
             disagreements.append({
                 'type': 'recommendation_conflict',
-                'description': f"{len(buy_agents)} agents recommend BUY while {len(sell_agents)} recommend SELL",
+                'description': description,
                 'buy_agents': [a.agent_name for a in buy_agents],
-                'sell_agents': [a.agent_name for a in sell_agents]
+                'sell_agents': [a.agent_name for a in sell_agents],
+                'short_agents': [a.agent_name for a in short_agents]
             })
         
         # Check for confidence spread
@@ -220,7 +230,7 @@ All agents MUST cross-check Sentiment Agent's analysis:
 Fundamental/Technical agents: You have hard data - challenge sentiment if it's detached from reality.
 
 Respond with:
-- Your updated recommendation (BUY/SELL/HOLD)
+- Your updated recommendation (BUY/SELL/SHORT/HOLD)
 - Your updated confidence (0.0-1.0)
 - Specific rebuttals to arguments you disagree with (especially sentiment claims)
 - New evidence that supports your position
@@ -228,7 +238,7 @@ Respond with:
 
 Format as JSON:
 {
-    "recommendation": "BUY|SELL|HOLD",
+    "recommendation": "BUY|SELL|SHORT|HOLD",
     "confidence": 0.0-1.0,
     "rebuttals": ["rebuttal 1", "rebuttal 2"],
     "supporting_evidence": ["evidence 1", "evidence 2"],
