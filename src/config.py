@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     
     # API Keys
     openai_api_key: Optional[str] = Field(None, alias="OPENAI_API_KEY")
-    anthropic_api_key: Optional[str] = Field(None, alias="ANTHROPIC_API_KEY")
     alpha_vantage_api_key: Optional[str] = Field(None, alias="ALPHA_VANTAGE_API_KEY")
     finnhub_api_key: Optional[str] = Field(None, alias="FINNHUB_API_KEY")
     newsapi_key: Optional[str] = Field(None, alias="NEWSAPI_KEY")

@@ -44,7 +44,7 @@ class BaseAgent(ABC):
         Args:
             name: Agent name (e.g., "geopolitical_analyst")
             role: Agent role description
-            llm_provider: LLM provider (openai, anthropic, etc.)
+            llm_provider: LLM provider (openai, ollama, etc.)
             model_name: Specific model to use
         """
         self.name = name
@@ -253,8 +253,6 @@ Required JSON structure:
         # Call appropriate provider
         if self.llm_provider == 'openai':
             response = self._call_openai(system_prompt, user_prompt)
-        elif self.llm_provider == 'anthropic':
-            response = self._call_anthropic(system_prompt, user_prompt)
         elif self.llm_provider == 'ollama':
             response = self._call_ollama(system_prompt, user_prompt)
         else:
@@ -271,56 +269,55 @@ Required JSON structure:
             import openai
             
             client = openai.OpenAI(api_key=config.settings.openai_api_key)
+            temperature = config.model_config.get('llm', {}).get('temperature', 0.7)
+            max_tokens = config.model_config.get('llm', {}).get('max_tokens', 2000)
+            is_gpt5_model = self.model_name.lower().startswith('gpt-5')
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
             
-            # Try max_completion_tokens first (newer API), fall back to max_tokens
+            # Prefer max_completion_tokens; GPT-5 models do not support max_tokens.
             try:
                 response = client.chat.completions.create(
                     model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    temperature=config.model_config.get('llm', {}).get('temperature', 0.7),
-                    max_completion_tokens=config.model_config.get('llm', {}).get('max_tokens', 2000)
+                    messages=messages,
+                    temperature=temperature,
+                    max_completion_tokens=max_tokens
                 )
             except TypeError:
-                # Fall back to max_tokens for older OpenAI library versions
-                response = client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    temperature=config.model_config.get('llm', {}).get('temperature', 0.7),
-                    max_tokens=config.model_config.get('llm', {}).get('max_tokens', 2000)
-                )
+                if is_gpt5_model:
+                    # Older SDKs may not expose max_completion_tokens in signature;
+                    # for GPT-5, retry without token cap rather than sending max_tokens.
+                    response = client.chat.completions.create(
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=temperature,
+                    )
+                else:
+                    response = client.chat.completions.create(
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens
+                    )
+            except Exception as first_error:
+                # If server rejects max_tokens/max_completion_tokens for model+endpoint combo,
+                # retry once without explicit token parameter.
+                error_text = str(first_error)
+                if "unsupported_parameter" in error_text or "max_tokens" in error_text or "max_completion_tokens" in error_text:
+                    response = client.chat.completions.create(
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=temperature,
+                    )
+                else:
+                    raise
             
             return response.choices[0].message.content
         
         except Exception as e:
             logger.error(f"Error calling OpenAI API: {e}")
-            raise
-    
-    def _call_anthropic(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Anthropic Claude API"""
-        try:
-            import anthropic
-            
-            client = anthropic.Anthropic(api_key=config.settings.anthropic_api_key)
-            
-            message = client.messages.create(
-                model=self.model_name,
-                max_tokens=config.model_config.get('llm', {}).get('max_tokens', 2000),
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            
-            return message.content[0].text
-        
-        except Exception as e:
-            logger.error(f"Error calling Anthropic API: {e}")
             raise
     
     def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
