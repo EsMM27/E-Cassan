@@ -191,6 +191,12 @@ class ConsensusBuilder:
             'scores': scores,
             'consensus_level': consensus_level,
             'method': 'confidence_weighted',
+            'breakdown': {
+                'BUY': recommendation_counts.get('BUY', 0),
+                'SELL': recommendation_counts.get('SELL', 0),
+                'SHORT': recommendation_counts.get('SHORT', 0),
+                'HOLD': recommendation_counts.get('HOLD', 0)
+            },
             'total_agents': len(responses)
         }
     
@@ -259,6 +265,64 @@ class ConsensusBuilder:
             'agent_reasoning': all_reasoning,
             'agent_count': len(responses)
         }
+
+    def aggregate_price_levels(
+        self,
+        responses: List[AgentResponse],
+        final_recommendation: str
+    ) -> Dict[str, Any]:
+        """
+        Aggregate price target and stop loss from agent responses.
+
+        Args:
+            responses: List of agent responses
+            final_recommendation: Consensus recommendation
+
+        Returns:
+            Aggregated price levels and contributor metadata
+        """
+        if not responses:
+            return {
+                'price_target': None,
+                'stop_loss': None,
+                'contributors': 0
+            }
+
+        aligned_responses = [r for r in responses if r.recommendation == final_recommendation]
+        candidate_responses = aligned_responses if aligned_responses else responses
+
+        weighted_target_sum = 0.0
+        weighted_stop_sum = 0.0
+        target_weight_total = 0.0
+        stop_weight_total = 0.0
+        contributors = 0
+
+        for response in candidate_responses:
+            weight = self.agent_weights.get(response.agent_name, 1.0 / len(responses))
+            confidence_weight = max(response.confidence, 0.01) * weight
+
+            used = False
+            if response.price_target is not None:
+                weighted_target_sum += response.price_target * confidence_weight
+                target_weight_total += confidence_weight
+                used = True
+
+            if response.stop_loss is not None:
+                weighted_stop_sum += response.stop_loss * confidence_weight
+                stop_weight_total += confidence_weight
+                used = True
+
+            if used:
+                contributors += 1
+
+        aggregated_price_target = weighted_target_sum / target_weight_total if target_weight_total > 0 else None
+        aggregated_stop_loss = weighted_stop_sum / stop_weight_total if stop_weight_total > 0 else None
+
+        return {
+            'price_target': aggregated_price_target,
+            'stop_loss': aggregated_stop_loss,
+            'contributors': contributors
+        }
     
     def generate_final_report(
         self,
@@ -291,6 +355,8 @@ class ConsensusBuilder:
                 analysis='',
                 recommendation=r['recommendation'],
                 confidence=r['confidence'],
+                price_target=r.get('price_target'),
+                stop_loss=r.get('stop_loss'),
                 reasoning=r['reasoning'],
                 key_points=r['key_points'],
                 risks=r['risks']
@@ -298,6 +364,12 @@ class ConsensusBuilder:
         
         # Build consensus
         consensus = self.build_consensus(responses, method=consensus_method)
+
+        # Aggregate price levels using consensus recommendation
+        price_levels = self.aggregate_price_levels(responses, consensus.get('recommendation', 'HOLD'))
+        consensus['price_target'] = price_levels['price_target']
+        consensus['stop_loss'] = price_levels['stop_loss']
+        consensus['price_level_contributors'] = price_levels['contributors']
         
         # Aggregate analysis
         aggregated = self.aggregate_analysis(responses)

@@ -197,13 +197,13 @@ class SignalGenerator:
         
         return summary
     
-    def estimate_price_targets(
+    def extract_consensus_price_levels(
         self,
         consensus_report: Dict[str, Any],
         current_price: Optional[float] = None
     ) -> tuple[Optional[float], Optional[float]]:
         """
-        Estimate price target and stop loss
+        Extract consensus price target and stop loss derived from agent outputs.
         
         Args:
             consensus_report: Consensus report
@@ -212,62 +212,47 @@ class SignalGenerator:
         Returns:
             Tuple of (price_target, stop_loss)
         """
-        # This is a simplified placeholder
-        # In a real system, you'd analyze technical levels, volatility, etc.
-        
-        if not current_price:
-            return None, None
-        
         consensus = consensus_report.get('consensus', {})
         recommendation = consensus.get('recommendation', 'HOLD')
-        confidence = consensus.get('confidence', 0.5)
-        
-        if recommendation == 'BUY':
-            # Target: 5-15% upside based on confidence
-            target_pct = 0.05 + (confidence * 0.10)
-            price_target = current_price * (1 + target_pct)
-            
-            # Stop loss: 3-5% below
-            stop_loss = current_price * 0.95
-            
-        elif recommendation == 'SELL':
-            # Target: 5-15% downside
-            target_pct = 0.05 + (confidence * 0.10)
-            price_target = current_price * (1 - target_pct)
-            
-            # Stop loss: 3-5% above
-            stop_loss = current_price * 1.05
-        
-        elif recommendation == 'SHORT':
-            # Target: 10-25% downside (more aggressive than SELL)
-            target_pct = 0.10 + (confidence * 0.15)
-            price_target = current_price * (1 - target_pct)
-            
-            # Stop loss: 5-8% above (tighter than SELL)
-            stop_loss_pct = 0.05 + (0.03 * (1 - confidence))
-            stop_loss = current_price * (1 + stop_loss_pct)
-        
-        else:  # HOLD
-            price_target = current_price
-            stop_loss = current_price * 0.90
-        
+        price_target = consensus.get('price_target')
+        stop_loss = consensus.get('stop_loss')
+
+        if current_price is not None:
+            if recommendation == 'BUY':
+                if price_target is not None and price_target < current_price:
+                    logger.warning("Consensus price target below current price for BUY recommendation")
+                if stop_loss is not None and stop_loss > current_price:
+                    logger.warning("Consensus stop loss above current price for BUY recommendation")
+            elif recommendation in ['SELL', 'SHORT']:
+                if price_target is not None and price_target > current_price:
+                    logger.warning("Consensus price target above current price for SELL/SHORT recommendation")
+                if stop_loss is not None and stop_loss < current_price:
+                    logger.warning("Consensus stop loss below current price for SELL/SHORT recommendation")
+
         return price_target, stop_loss
     
     def determine_time_horizon(
         self,
-        consensus_report: Dict[str, Any]
+        consensus_report: Dict[str, Any],
+        time_horizon_months: Optional[int] = None
     ) -> str:
         """
         Determine investment time horizon
         
         Args:
             consensus_report: Consensus report
+            time_horizon_months: Optional user-provided horizon in months (1-12)
         
         Returns:
             Time horizon (short_term, medium_term, long_term)
         """
-        # Placeholder logic
-        # In real system, analyze agent inputs for time-specific signals
+        if time_horizon_months is not None:
+            if time_horizon_months <= 3:
+                return 'short_term'
+            elif time_horizon_months <= 8:
+                return 'medium_term'
+            else:
+                return 'long_term'
         
         consensus = consensus_report.get('consensus', {})
         confidence = consensus.get('confidence', 0.5)
@@ -283,7 +268,8 @@ class SignalGenerator:
     def generate_signal(
         self,
         consensus_report: Dict[str, Any],
-        current_price: Optional[float] = None
+        current_price: Optional[float] = None,
+        time_horizon_months: Optional[int] = None
     ) -> TradingSignal:
         """
         Generate complete trading signal from consensus report
@@ -291,6 +277,7 @@ class SignalGenerator:
         Args:
             consensus_report: Consensus report from ConsensusBuilder
             current_price: Current stock price (optional)
+            time_horizon_months: Optional user-provided horizon in months (1-12)
         
         Returns:
             TradingSignal object
@@ -316,14 +303,17 @@ class SignalGenerator:
         agent_consensus_text = self.generate_consensus_summary(consensus_report)
         reasoning_summary = self.generate_reasoning_summary(consensus_report)
         
-        # Estimate targets
-        price_target, stop_loss = self.estimate_price_targets(
+        # Extract consensus targets generated by agents
+        price_target, stop_loss = self.extract_consensus_price_levels(
             consensus_report,
             current_price
         )
         
         # Determine time horizon
-        time_horizon = self.determine_time_horizon(consensus_report)
+        time_horizon = self.determine_time_horizon(
+            consensus_report,
+            time_horizon_months=time_horizon_months
+        )
         
         # Create trading signal
         trading_signal = TradingSignal(
@@ -378,9 +368,9 @@ Time Horizon: {signal.time_horizon.replace('_', ' ').title()}
 
 """
         
-        if signal.price_target:
+        if signal.price_target is not None:
             output += f"Price Target: ${signal.price_target:.2f}\n"
-        if signal.stop_loss:
+        if signal.stop_loss is not None:
             output += f"Stop Loss: ${signal.stop_loss:.2f}\n"
         
         output += f"""

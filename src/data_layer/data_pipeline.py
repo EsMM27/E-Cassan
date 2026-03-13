@@ -53,6 +53,7 @@ class DataPipeline:
         try:
             company_info = stock_data.get('company_info', {})
             price_data = stock_data.get('price_data', {}).get('latest', {})
+            market_price = price_data.get('Close', company_info.get('current_price', 0))
             
             summary = f"""
 # Stock Summary: {company_info.get('name', 'Unknown')} ({company_info.get('ticker', 'N/A')})
@@ -64,7 +65,7 @@ class DataPipeline:
 - Employees: {company_info.get('employees', 0):,}
 
 ## Current Price Information
-- Current Price: ${company_info.get('current_price', 0):.2f}
+- Current Price: ${market_price:.2f}
 - Previous Close: ${company_info.get('previous_close', 0):.2f}
 - 52 Week High: ${company_info.get('fifty_two_week_high', 0):.2f}
 - 52 Week Low: ${company_info.get('fifty_two_week_low', 0):.2f}
@@ -241,9 +242,10 @@ Date Range: {news_data.get('date_range', {}).get('from', 'N/A')} to {news_data.g
         """
         company_info = stock_data.get('company_info', {})
         price_data = stock_data.get('price_data', {}).get('latest', {})
+        current_price = price_data.get('Close', company_info.get('current_price', 0))
         
         return {
-            'current_price': company_info.get('current_price', 0),
+            'current_price': current_price,
             'pe_ratio': company_info.get('pe_ratio', 0),
             'forward_pe': company_info.get('forward_pe', 0),
             'peg_ratio': company_info.get('peg_ratio', 0),

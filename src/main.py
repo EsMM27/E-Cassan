@@ -70,7 +70,8 @@ class ECassanSystem:
         company_name: Optional[str] = None,
         period: str = "1mo",
         news_days_back: int = 7,
-        consensus_method: str = "weighted",
+        consensus_method: Optional[str] = None,
+        time_horizon_months: Optional[int] = None,
         save_outputs: bool = True
     ) -> Dict[str, Any]:
         """
@@ -81,7 +82,9 @@ class ECassanSystem:
             company_name: Company name (optional, will be fetched if not provided)
             period: Period for stock data
             news_days_back: Days to look back for news
-            consensus_method: Method for building consensus
+            consensus_method: Method for building consensus (weighted, majority, confidence).
+                            If None, uses value from config.yaml
+            time_horizon_months: Custom time horizon in months (1-12). If None, uses auto-detection based on confidence.
             save_outputs: Whether to save outputs to files
         
         Returns:
@@ -90,6 +93,11 @@ class ECassanSystem:
         logger.info(f"\n{'=' * 80}")
         logger.info(f"STARTING ANALYSIS: {ticker}")
         logger.info(f"{'=' * 80}\n")
+        
+        # Use config default if consensus_method not provided
+        if consensus_method is None:
+            consensus_method = config.get('reasoning.consensus_method', 'weighted')
+            logger.info(f"Using consensus method from config: {consensus_method}")
         
         with Timer(f"Complete analysis for {ticker}"):
             try:
@@ -111,7 +119,10 @@ class ECassanSystem:
                 # Step 3: Agent Analysis & Debate
                 logger.info("\nSTEP 3: Multi-Agent Analysis & Debate")
                 with Timer("Debate process"):
-                    debate_result = self.debate_manager.run_full_debate(processed_data)
+                    debate_result = self.debate_manager.run_full_debate(
+                        processed_data,
+                        time_horizon_months=time_horizon_months
+                    )
                 
                 # Step 4: Consensus Building
                 logger.info("\nSTEP 4: Consensus Building")
@@ -124,10 +135,17 @@ class ECassanSystem:
                 # Step 5: Signal Generation
                 logger.info("\nSTEP 5: Trading Signal Generation")
                 with Timer("Signal generation"):
-                    current_price = raw_data.get('data', {}).get('stock', {}).get('company_info', {}).get('current_price')
+                    # Get current price from latest price data (more accurate than company_info)
+                    stock_data = raw_data.get('data', {}).get('stock', {})
+                    current_price = stock_data.get('price_data', {}).get('latest', {}).get('Close')
+                    # Fallback to company_info if price_data not available
+                    if not current_price:
+                        current_price = stock_data.get('company_info', {}).get('current_price')
+                    
                     trading_signal = self.signal_generator.generate_signal(
                         consensus_report,
-                        current_price=current_price
+                        current_price=current_price,
+                        time_horizon_months=time_horizon_months
                     )
                 
                 # Step 6: Logging & Output
@@ -290,9 +308,16 @@ def main():
     parser.add_argument('--company-name', help='Company name (optional)')
     parser.add_argument('--period', default='1mo', help='Period for stock data (default: 1mo)')
     parser.add_argument('--news-days', type=int, default=7, help='Days to look back for news (default: 7)')
+    parser.add_argument('--consensus-method', default=None, help='Consensus method: weighted, majority, or confidence (default: config value)')
+    parser.add_argument('--time-horizon', type=int, default=None, help='Custom time horizon in months (1-12). If not specified, auto-detects based on confidence.')
     parser.add_argument('--log-level', default='INFO', help='Logging level (default: INFO)')
     
     args = parser.parse_args()
+    
+    # Validate time horizon
+    if args.time_horizon is not None and (args.time_horizon < 1 or args.time_horizon > 12):
+        print("Error: --time-horizon must be between 1 and 12")
+        return
     
     # Initialize system
     system = ECassanSystem(
@@ -300,10 +325,21 @@ def main():
     )
     
     # Run analysis
-    result = system.quick_analysis(args.ticker)
+    result = system.analyze_stock(
+        ticker=args.ticker,
+        company_name=args.company_name,
+        period=args.period,
+        news_days_back=args.news_days,
+        consensus_method=args.consensus_method,
+        time_horizon_months=args.time_horizon
+    )
     
     # Print result
-    print(result)
+    from .decision_layer import TradingSignal
+    signal_dict = result['trading_signal']
+    signal = TradingSignal(**signal_dict)
+    formatted_text = system.signal_generator.format_signal_for_output(signal)
+    print(formatted_text)
 
 
 if __name__ == '__main__':

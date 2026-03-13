@@ -3,7 +3,7 @@ Technical Agent
 Analyzes price movements and technical indicators
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from loguru import logger
 
 from .base_agent import BaseAgent, AgentResponse
@@ -63,12 +63,13 @@ Be precise about:
 
 Remember: Technical analysis identifies *when* to trade, not necessarily *why* the market is moving."""
     
-    def analyze(self, data: Dict[str, Any]) -> AgentResponse:
+    def analyze(self, data: Dict[str, Any], time_horizon_months: Optional[int] = None) -> AgentResponse:
         """
         Perform technical analysis
         
         Args:
             data: Price data and technical indicators
+            time_horizon_months: Investment time horizon in months (1-12)
         
         Returns:
             AgentResponse with technical analysis
@@ -78,10 +79,10 @@ Remember: Technical analysis identifies *when* to trade, not necessarily *why* t
         try:
             # Get prompts
             system_prompt = self.get_system_prompt()
-            user_prompt = self.format_user_prompt(data)
+            user_prompt = self.format_user_prompt(data, time_horizon_months)
             
-            # Call LLM
-            response_text = self.call_llm(system_prompt, user_prompt)
+            # Call LLM with ticker for logging
+            response_text = self.call_llm(system_prompt, user_prompt, ticker=data.get('ticker', 'UNKNOWN'))
             
             # Parse response
             parsed = self.parse_llm_response(response_text)
@@ -93,6 +94,8 @@ Remember: Technical analysis identifies *when* to trade, not necessarily *why* t
                 analysis=parsed.get('analysis', ''),
                 recommendation=parsed.get('recommendation', 'HOLD'),
                 confidence=float(parsed.get('confidence', 0.5)),
+                price_target=self.to_optional_float(parsed.get('price_target')),
+                stop_loss=self.to_optional_float(parsed.get('stop_loss')),
                 reasoning=parsed.get('reasoning', ''),
                 key_points=parsed.get('key_points', []),
                 risks=parsed.get('risks', []),
@@ -110,6 +113,8 @@ Remember: Technical analysis identifies *when* to trade, not necessarily *why* t
                 analysis=f"Error during analysis: {str(e)}",
                 recommendation="HOLD",
                 confidence=0.0,
+                price_target=None,
+                stop_loss=None,
                 reasoning="Analysis failed due to technical error",
                 key_points=[],
                 risks=["Analysis incomplete"]

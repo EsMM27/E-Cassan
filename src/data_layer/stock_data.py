@@ -319,7 +319,7 @@ class StockDataCollector:
                 'employees': int(data.get('FullTimeEmployees', 0) or 0),
                 'description': data.get('Description', ''),
                 'website': data.get('Website', ''),
-                'current_price': float(data.get('AnalystTargetPrice', 0) or 0),
+                'current_price': float(data.get('PreviousClose', 0) or 0),
                 'previous_close': float(data.get('PreviousClose', 0) or 0),
                 'fifty_two_week_high': float(data.get('52WeekHigh', 0) or 0),
                 'fifty_two_week_low': float(data.get('52WeekLow', 0) or 0),
@@ -448,13 +448,14 @@ class StockDataCollector:
             return df_copy.to_dict()
         
         # Compile results
+        sorted_price_data = price_data_with_indicators.sort_index(ascending=True)
         result = {
             'ticker': ticker,
             'timestamp': datetime.now().isoformat(),
             'company_info': company_info,
             'price_data': {
-                'latest': price_data_with_indicators.iloc[-1].to_dict() if not price_data_with_indicators.empty else {},
-                'historical': safe_to_dict(price_data_with_indicators.tail(30))
+                'latest': sorted_price_data.iloc[-1].to_dict() if not sorted_price_data.empty else {},
+                'historical': safe_to_dict(sorted_price_data.tail(30))
             },
             'financials': financials
         }

@@ -33,11 +33,12 @@ agents:
     description: Extracts market sentiment from news and social media
     weight: 0.20
     prompt_template: templates/sentiment_agent.txt
-    llm_provider: ollama
-    model_name: deepseek-r1:14b
+    llm_provider: openai
+    model_name: gpt-4-turbo-preview
 
 reasoning:
   debate_rounds: 3
+  consensus_method: weighted  # Options: weighted, majority, confidence
   consensus_threshold: 0.8
   max_iterations: 5
   timeout_seconds: 300

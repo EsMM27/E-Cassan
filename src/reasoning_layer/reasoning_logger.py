@@ -134,6 +134,8 @@ AGENT ANALYSES
 
 Recommendation: {response['recommendation']}
 Confidence: {response['confidence']:.2%}
+Price Target: {f"${response['price_target']:.2f}" if response.get('price_target') is not None else 'N/A'}
+Stop Loss: {f"${response['stop_loss']:.2f}" if response.get('stop_loss') is not None else 'N/A'}
 
 Reasoning:
 {response['reasoning']}

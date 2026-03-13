@@ -20,6 +20,8 @@ class AgentResponse(BaseModel):
     analysis: str
     recommendation: str  # BUY, SELL, SHORT, HOLD
     confidence: float = Field(ge=0.0, le=1.0)
+    price_target: Optional[float] = None
+    stop_loss: Optional[float] = None
     reasoning: str
     key_points: list[str]
     risks: list[str]
@@ -59,13 +61,88 @@ class BaseAgent(ABC):
         
         logger.info(f"Initialized {self.name} agent with weight {self.weight}, provider={self.llm_provider}, model={self.model_name}")
     
+    def _log_llm_response(self, response: str, ticker: str = "UNKNOWN") -> None:
+        """
+        Log LLM response to file for inspection
+        
+        Args:
+            response: LLM response text
+            ticker: Stock ticker for context
+        """
+        try:
+            from pathlib import Path
+            from datetime import datetime
+            
+            # Create logs/llm_responses directory
+            log_dir = Path('logs/llm_responses')
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{ticker}_{self.name}_{timestamp}.txt"
+            filepath = log_dir / filename
+            
+            # Create log content
+            log_content = f"""{'=' * 80}
+AGENT: {self.name} ({self.role})
+PROVIDER: {self.llm_provider}
+MODEL: {self.model_name}
+TICKER: {ticker}
+TIMESTAMP: {timestamp}
+{'=' * 80}
+
+{response}
+
+{'=' * 80}
+END OF RESPONSE
+{'=' * 80}
+"""
+            
+            # Write to file
+            filepath.write_text(log_content, encoding='utf-8')
+            logger.debug(f"LLM response logged to: {filepath}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to log LLM response: {e}")
+    
+    @staticmethod
+    def describe_time_horizon(months: Optional[int]) -> tuple[str, str]:
+        """
+        Convert time horizon in months to descriptive categories
+        
+        Args:
+            months: Time horizon in months (1-12) or None
+        
+        Returns:
+            Tuple of (category, description)
+        """
+        if months is None:
+            return "moderate", "a moderate time horizon (3-6 months)"
+        elif months <= 3:
+            return "short-term", f"a short-term horizon of {months} month{'s' if months > 1 else ''}"
+        elif months <= 8:
+            return "medium-term", f"a medium-term horizon of {months} months"
+        else:
+            return "long-term", f"a long-term horizon of {months} months"
+
+    @staticmethod
+    def to_optional_float(value: Any) -> Optional[float]:
+        """Convert model output to float when possible, else None."""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+    
     @abstractmethod
-    def analyze(self, data: Dict[str, Any]) -> AgentResponse:
+    def analyze(self, data: Dict[str, Any], time_horizon_months: Optional[int] = None) -> AgentResponse:
         """
         Perform analysis on provided data
         
         Args:
             data: Dictionary containing relevant data for analysis
+            time_horizon_months: Investment time horizon in months (1-12)
         
         Returns:
             AgentResponse with analysis results
@@ -82,21 +159,28 @@ class BaseAgent(ABC):
         """
         pass
     
-    def format_user_prompt(self, data: Dict[str, Any]) -> str:
+    def format_user_prompt(self, data: Dict[str, Any], time_horizon_months: Optional[int] = None) -> str:
         """
         Format the user prompt with data
         
         Args:
             data: Data to include in prompt
+            time_horizon_months: Investment time horizon in months (1-12)
         
         Returns:
             Formatted user prompt
         """
         ticker = data.get('ticker', 'Unknown')
         company_name = data.get('company_name', 'Unknown')
+        current_price = data.get('raw_data', {}).get('data', {}).get('stock', {}).get('price_data', {}).get('latest', {}).get('Close')
+        if not current_price:
+            current_price = data.get('raw_data', {}).get('data', {}).get('stock', {}).get('company_info', {}).get('current_price')
+        
+        # Get time horizon description
+        horizon_category, horizon_description = self.describe_time_horizon(time_horizon_months)
         
         prompt = f"""
-Please analyze the following information for {company_name} ({ticker}):
+Please analyze the following information for {company_name} ({ticker}) with {horizon_description}:
 
 ## Stock Information
 {data.get('stock_summary', 'No stock data available')}
@@ -107,52 +191,79 @@ Please analyze the following information for {company_name} ({ticker}):
 ## Financial Data
 {data.get('financial_summary', 'No financial data available')}
 
-Based on this information and your role as a {self.role}, provide:
+## INVESTMENT TIME HORIZON
+You are analyzing this stock for {horizon_description.upper()}.
+- Short-term (1-3 months): Focus on momentum, technicals, immediate catalysts, and short-term sentiment
+- Medium-term (4-8 months): Balance between fundamentals and technical trends, quarterly performance
+- Long-term (9-12 months): Emphasize fundamentals, strategic position, competitive advantages, and sustainable growth
+
+Tailor your analysis, recommendation, and confidence level to this specific time horizon.
+
+Based on this information, your role as a {self.role}, and the specified time horizon, provide:
 1. A comprehensive analysis
 2. Your recommendation (BUY, SELL, SHORT, or HOLD)
 3. Your confidence level (0.0 to 1.0)
-4. Detailed reasoning for your recommendation
-5. Key points that support your analysis (list 3-5 points)
-6. Potential risks or concerns (list 2-4 risks)
+4. A specific price target (absolute price level)
+5. A specific stop loss (absolute price level)
+6. Detailed reasoning for your recommendation
+7. Key points that support your analysis (list 3-5 points)
+8. Potential risks or concerns (list 2-4 risks)
+
+Price level requirements:
+- Always provide numeric values for price_target and stop_loss.
+- Base levels on the current price context: {current_price if current_price is not None else 'N/A'}
+- For BUY: price_target should generally be above current price and stop_loss below.
+- For SELL/SHORT: price_target should generally be below current price and stop_loss above.
+- For HOLD: provide a neutral range midpoint as price_target and a defensive stop_loss.
 
 Recommendation options:
 - BUY: Long position - expect price to rise
 - SELL: Exit or avoid - neutral to slightly bearish
-- SHORT: Short position - expect significant price decline
+- SHORT: Short position - expect price decline
 - HOLD: Maintain current position
 
-Format your response as JSON with the following structure:
+RESPONSE FORMAT: Return ONLY a valid JSON object (no additional text).
+
+Required JSON structure:
 {{
-    "analysis": "Your detailed analysis here",
+    "analysis": "Your detailed analysis",
     "recommendation": "BUY|SELL|SHORT|HOLD",
-    "confidence": 0.0-1.0,
-    "reasoning": "Detailed reasoning for your recommendation",
-    "key_points": ["point 1", "point 2", ...],
-    "risks": ["risk 1", "risk 2", ...]
+    "confidence": 0.75,
+    "price_target": 123.45,
+    "stop_loss": 110.25,
+    "reasoning": "Key reasoning",
+    "key_points": ["point 1", "point 2", "point 3"],
+    "risks": ["risk 1", "risk 2"]
 }}
 """
         return prompt
     
-    def call_llm(self, system_prompt: str, user_prompt: str) -> str:
+    def call_llm(self, system_prompt: str, user_prompt: str, ticker: str = "UNKNOWN") -> str:
         """
-        Call the LLM with prompts
+        Call the LLM with prompts and log the response
         
         Args:
             system_prompt: System prompt
             user_prompt: User prompt
+            ticker: Stock ticker for logging context
         
         Returns:
             LLM response text
         """
-        # This is a placeholder - implement actual LLM calls
+        # Call appropriate provider
         if self.llm_provider == 'openai':
-            return self._call_openai(system_prompt, user_prompt)
+            response = self._call_openai(system_prompt, user_prompt)
         elif self.llm_provider == 'anthropic':
-            return self._call_anthropic(system_prompt, user_prompt)
+            response = self._call_anthropic(system_prompt, user_prompt)
         elif self.llm_provider == 'ollama':
-            return self._call_ollama(system_prompt, user_prompt)
+            response = self._call_ollama(system_prompt, user_prompt)
         else:
             raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
+        
+        # Log the response
+        self._log_llm_response(response, ticker)
+        
+        return response
     
     def _call_openai(self, system_prompt: str, user_prompt: str) -> str:
         """Call OpenAI API"""
@@ -239,10 +350,10 @@ Format your response as JSON with the following structure:
     
     def parse_llm_response(self, response_text: str) -> Dict[str, Any]:
         """
-        Parse LLM response into structured format
+        Parse LLM JSON response into structured format
         
         Args:
-            response_text: Raw LLM response
+            response_text: Raw LLM response (expected to contain JSON)
         
         Returns:
             Parsed response dictionary
@@ -251,28 +362,54 @@ Format your response as JSON with the following structure:
         import re
         
         try:
-            # Try to extract JSON from response
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            # Remove thinking tags if present
+            cleaned = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL | re.IGNORECASE)
+            
+            # Extract JSON from markdown code blocks
+            code_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', cleaned, re.DOTALL)
+            if code_match:
+                return json.loads(code_match.group(1))
+            
+            # Extract bare JSON object using brace counting
+            brace_count = 0
+            start_idx = None
+            for i, char in enumerate(cleaned):
+                if char == '{':
+                    if start_idx is None:
+                        start_idx = i
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0 and start_idx is not None:
+                        return json.loads(cleaned[start_idx:i+1])
+            
+            # Greedy fallback
+            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
             if json_match:
                 return json.loads(json_match.group())
-            else:
-                # If no JSON found, return raw text
-                return {
-                    'analysis': response_text,
-                    'recommendation': 'HOLD',
-                    'confidence': 0.5,
-                    'reasoning': 'Unable to parse structured response',
-                    'key_points': [],
-                    'risks': []
-                }
-        
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse LLM response as JSON")
+            
+            # No JSON found - return safely with defaults
+            logger.error(f"No JSON found in response. First 300 chars: {response_text[:300]}")
             return {
-                'analysis': response_text,
+                'analysis': response_text[:500],
                 'recommendation': 'HOLD',
-                'confidence': 0.5,
-                'reasoning': 'Unable to parse structured response',
+                'confidence': 0.0,
+                'price_target': None,
+                'stop_loss': None,
+                'reasoning': 'Failed to extract JSON from response',
+                'key_points': [],
+                'risks': []
+            }
+        
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error: {e}. Response: {response_text[:300]}")
+            return {
+                'analysis': response_text[:500],
+                'recommendation': 'HOLD',
+                'confidence': 0.0,
+                'price_target': None,
+                'stop_loss': None,
+                'reasoning': f'JSON decode error: {str(e)}',
                 'key_points': [],
                 'risks': []
             }

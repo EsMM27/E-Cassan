@@ -3,7 +3,7 @@ Debate Manager
 Orchestrates debate between agents
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from loguru import logger
 
@@ -41,6 +41,8 @@ class DebateRound:
                     'agent': r.agent_name,
                     'recommendation': r.recommendation,
                     'confidence': r.confidence,
+                    'price_target': r.price_target,
+                    'stop_loss': r.stop_loss,
                     'reasoning': r.reasoning,
                     'key_points': r.key_points,
                     'risks': r.risks
@@ -93,23 +95,28 @@ class DebateManager:
         
         return agreement_count / len(responses)
     
-    def conduct_initial_analysis(self, data: Dict[str, Any]) -> List[AgentResponse]:
+    def conduct_initial_analysis(self, data: Dict[str, Any], time_horizon_months: Optional[int] = None) -> List[AgentResponse]:
         """
         Conduct initial analysis by all agents independently
         
         Args:
             data: Formatted data for analysis
+            time_horizon_months: Investment time horizon in months (1-12)
         
         Returns:
             List of agent responses
         """
         logger.info("=== Starting Initial Analysis Phase ===")
         
+        # Log time horizon if provided
+        if time_horizon_months:
+            logger.info(f"Analysis time horizon: {time_horizon_months} months")
+        
         responses = []
         for agent in self.agents:
             try:
                 logger.info(f"Agent {agent.name} performing analysis...")
-                response = agent.analyze(data)
+                response = agent.analyze(data, time_horizon_months=time_horizon_months)
                 responses.append(response)
                 logger.info(f"Agent {agent.name} completed: {response.recommendation} (confidence: {response.confidence:.2f})")
             except Exception as e:
@@ -197,6 +204,8 @@ class DebateManager:
 ### {response.agent_role} ({response.agent_name})
 - **Recommendation:** {response.recommendation}
 - **Confidence:** {response.confidence:.2f}
+- **Price Target:** {response.price_target if response.price_target is not None else 'N/A'}
+- **Stop Loss:** {response.stop_loss if response.stop_loss is not None else 'N/A'}
 - **Key Reasoning:** {response.reasoning[:200]}...
 - **Main Points:**
 """
@@ -232,6 +241,8 @@ Fundamental/Technical agents: You have hard data - challenge sentiment if it's d
 Respond with:
 - Your updated recommendation (BUY/SELL/SHORT/HOLD)
 - Your updated confidence (0.0-1.0)
+- Your updated price target (absolute numeric price)
+- Your updated stop loss (absolute numeric price)
 - Specific rebuttals to arguments you disagree with (especially sentiment claims)
 - New evidence that supports your position
 - Any concessions you're willing to make
@@ -240,6 +251,8 @@ Format as JSON:
 {
     "recommendation": "BUY|SELL|SHORT|HOLD",
     "confidence": 0.0-1.0,
+    "price_target": 123.45,
+    "stop_loss": 111.11,
     "rebuttals": ["rebuttal 1", "rebuttal 2"],
     "supporting_evidence": ["evidence 1", "evidence 2"],
     "concessions": ["concession 1", "concession 2"]
@@ -291,17 +304,32 @@ Format as JSON:
                 # Combine with debate context
                 full_prompt = debate_prompt
                 
-                # Get updated position
-                response_text = agent.call_llm(system_prompt, full_prompt)
+                # Get updated position (with ticker for logging)
+                ticker = data.get('ticker', 'UNKNOWN')
+                response_text = agent.call_llm(system_prompt, full_prompt, ticker=ticker)
                 parsed = agent.parse_llm_response(response_text)
                 
                 # Update response
                 previous_recommendation = previous_responses[i].recommendation
                 previous_confidence = previous_responses[i].confidence
+                previous_price_target = previous_responses[i].price_target
+                previous_stop_loss = previous_responses[i].stop_loss
                 
                 updated_response = previous_responses[i]
                 updated_response.recommendation = parsed.get('recommendation', updated_response.recommendation)
                 updated_response.confidence = float(parsed.get('confidence', updated_response.confidence))
+
+                parsed_price_target = parsed.get('price_target', updated_response.price_target)
+                try:
+                    updated_response.price_target = float(parsed_price_target) if parsed_price_target is not None else None
+                except (TypeError, ValueError):
+                    updated_response.price_target = previous_responses[i].price_target
+
+                parsed_stop_loss = parsed.get('stop_loss', updated_response.stop_loss)
+                try:
+                    updated_response.stop_loss = float(parsed_stop_loss) if parsed_stop_loss is not None else None
+                except (TypeError, ValueError):
+                    updated_response.stop_loss = previous_responses[i].stop_loss
                 
                 debate_round.add_response(updated_response)
                 
@@ -310,11 +338,15 @@ Format as JSON:
                     'agent': agent.name,
                     'previous_position': {
                         'recommendation': previous_recommendation,
-                        'confidence': previous_confidence
+                        'confidence': previous_confidence,
+                        'price_target': previous_price_target,
+                        'stop_loss': previous_stop_loss
                     },
                     'new_position': {
                         'recommendation': updated_response.recommendation,
-                        'confidence': updated_response.confidence
+                        'confidence': updated_response.confidence,
+                        'price_target': updated_response.price_target,
+                        'stop_loss': updated_response.stop_loss
                     },
                     'changed': previous_recommendation != updated_response.recommendation,
                     'rebuttals': parsed.get('rebuttals', []),
@@ -331,12 +363,13 @@ Format as JSON:
         logger.info(f"=== Debate Round {round_number} Complete ===")
         return debate_round
     
-    def run_full_debate(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def run_full_debate(self, data: Dict[str, Any], time_horizon_months: Optional[int] = None) -> Dict[str, Any]:
         """
         Run complete debate process
         
         Args:
             data: Formatted data for analysis
+            time_horizon_months: Investment time horizon in months (1-12)
         
         Returns:
             Complete debate results
@@ -344,7 +377,7 @@ Format as JSON:
         logger.info("========== STARTING MULTI-AGENT DEBATE ==========")
         
         # Initial analysis
-        initial_responses = self.conduct_initial_analysis(data)
+        initial_responses = self.conduct_initial_analysis(data, time_horizon_months=time_horizon_months)
         
         if not initial_responses:
             logger.error("No agents provided initial analysis")
@@ -396,6 +429,8 @@ Format as JSON:
                     'role': r.agent_role,
                     'recommendation': r.recommendation,
                     'confidence': r.confidence,
+                    'price_target': r.price_target,
+                    'stop_loss': r.stop_loss,
                     'reasoning': r.reasoning,
                     'key_points': r.key_points,
                     'risks': r.risks

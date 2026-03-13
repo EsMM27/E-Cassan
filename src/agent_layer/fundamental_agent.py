@@ -3,7 +3,7 @@ Fundamental Agent
 Analyzes company fundamentals and financial health
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from loguru import logger
 
 from .base_agent import BaseAgent, AgentResponse
@@ -56,12 +56,13 @@ Compare the company to:
 
 Be specific about valuation, using DCF, comparable companies, or other methods where appropriate."""
     
-    def analyze(self, data: Dict[str, Any]) -> AgentResponse:
+    def analyze(self, data: Dict[str, Any], time_horizon_months: Optional[int] = None) -> AgentResponse:
         """
         Perform fundamental analysis
         
         Args:
             data: Company financial data and metrics
+            time_horizon_months: Investment time horizon in months (1-12)
         
         Returns:
             AgentResponse with fundamental analysis
@@ -71,10 +72,10 @@ Be specific about valuation, using DCF, comparable companies, or other methods w
         try:
             # Get prompts
             system_prompt = self.get_system_prompt()
-            user_prompt = self.format_user_prompt(data)
+            user_prompt = self.format_user_prompt(data, time_horizon_months)
             
-            # Call LLM
-            response_text = self.call_llm(system_prompt, user_prompt)
+            # Call LLM with ticker for logging
+            response_text = self.call_llm(system_prompt, user_prompt, ticker=data.get('ticker', 'UNKNOWN'))
             
             # Parse response
             parsed = self.parse_llm_response(response_text)
@@ -86,6 +87,8 @@ Be specific about valuation, using DCF, comparable companies, or other methods w
                 analysis=parsed.get('analysis', ''),
                 recommendation=parsed.get('recommendation', 'HOLD'),
                 confidence=float(parsed.get('confidence', 0.5)),
+                price_target=self.to_optional_float(parsed.get('price_target')),
+                stop_loss=self.to_optional_float(parsed.get('stop_loss')),
                 reasoning=parsed.get('reasoning', ''),
                 key_points=parsed.get('key_points', []),
                 risks=parsed.get('risks', []),
@@ -103,6 +106,8 @@ Be specific about valuation, using DCF, comparable companies, or other methods w
                 analysis=f"Error during analysis: {str(e)}",
                 recommendation="HOLD",
                 confidence=0.0,
+                price_target=None,
+                stop_loss=None,
                 reasoning="Analysis failed due to technical error",
                 key_points=[],
                 risks=["Analysis incomplete"]

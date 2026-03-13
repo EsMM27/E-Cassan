@@ -65,7 +65,7 @@ pip install -r requirements.txt
 
 4. **Configure environment**
 ```powershell
-cp .env.example .env
+cp .env
 # Edit .env with your API keys
 ```
 
@@ -76,7 +76,6 @@ Add the following to your `.env` file:
 ```ini
 # LLM APIs
 OPENAI_API_KEY=your_openai_key
-ANTHROPIC_API_KEY=your_anthropic_key
 
 # Financial Data APIs
 ALPHA_VANTAGE_API_KEY=your_alphavantage_key
@@ -108,17 +107,6 @@ result = system.analyze_stock('AAPL')
 # Get formatted signal
 signal_text = system.quick_analysis('AAPL')
 print(signal_text)
-```
-
-### Batch Analysis
-
-Analyze multiple stocks:
-
-```python
-from src.main import ECassanSystem
-
-system = ECassanSystem()
-results = system.batch_analysis(['AAPL', 'MSFT', 'GOOGL'])
 ```
 
 ## Configuration

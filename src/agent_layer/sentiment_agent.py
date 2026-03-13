@@ -3,7 +3,7 @@ Sentiment Agent
 Analyzes market sentiment from news and social media.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from loguru import logger
 
 from .base_agent import BaseAgent, AgentResponse
@@ -108,12 +108,13 @@ Be specific about:
 - Potential sentiment-driven price impacts
 - Confidence level (lower if sentiment contradicts data)"""
     
-    def analyze(self, data: Dict[str, Any]) -> AgentResponse:
+    def analyze(self, data: Dict[str, Any], time_horizon_months: Optional[int] = None) -> AgentResponse:
         """
         Perform sentiment analysis
         
         Args:
             data: News and market data
+            time_horizon_months: Investment time horizon in months (1-12)
         
         Returns:
             AgentResponse with sentiment analysis
@@ -135,10 +136,10 @@ Be specific about:
             
             # Get prompts
             system_prompt = self.get_system_prompt()
-            user_prompt = self.format_user_prompt_with_sentiment(data_with_sentiment)
+            user_prompt = self.format_user_prompt_with_sentiment(data_with_sentiment, time_horizon_months)
             
-            # Call LLM
-            response_text = self.call_llm(system_prompt, user_prompt)
+            # Call LLM with ticker for logging
+            response_text = self.call_llm(system_prompt, user_prompt, ticker=data.get('ticker', 'UNKNOWN'))
             
             # Parse response
             parsed = self.parse_llm_response(response_text)
@@ -150,6 +151,8 @@ Be specific about:
                 analysis=parsed.get('analysis', ''),
                 recommendation=parsed.get('recommendation', 'HOLD'),
                 confidence=float(parsed.get('confidence', 0.5)),
+                price_target=self.to_optional_float(parsed.get('price_target')),
+                stop_loss=self.to_optional_float(parsed.get('stop_loss')),
                 reasoning=parsed.get('reasoning', ''),
                 key_points=parsed.get('key_points', []),
                 risks=parsed.get('risks', []),
@@ -168,11 +171,13 @@ Be specific about:
                 analysis=f"Error during analysis: {str(e)}",
                 recommendation="HOLD",
                 confidence=0.0,
+                price_target=None,
+                stop_loss=None,
                 reasoning="Analysis failed due to technical error",
                 key_points=[],
                 risks=["Analysis incomplete"]
             )
     
-    def format_user_prompt_with_sentiment(self, data: Dict[str, Any]) -> str:
+    def format_user_prompt_with_sentiment(self, data: Dict[str, Any], time_horizon_months: Optional[int] = None) -> str:
         """Format user prompt without automated sentiment heuristics"""
-        return self.format_user_prompt(data)
+        return self.format_user_prompt(data, time_horizon_months)
