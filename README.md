@@ -23,10 +23,10 @@ The system consists of four main layers:
 - **Data Pipeline**: Cleans and formats data for agent consumption
 
 ### 2. Agent Layer
-- **Geopolitical Agent**: Analyzes global events and their market impact
+- **Geopolitical Agent**: Analyzes global events and their market impact based on news regarding stock
 - **Fundamental Agent**: Evaluates company financials and business model
 - **Technical Agent**: Analyzes price movements and technical indicators
-- **Sentiment Agent**: Extracts sentiment using FinBERT and LLM analysis
+- **Sentiment Agent**: Extracts sentiment using LLM analysis based on news
 
 ### 3. Reasoning Layer
 - **Debate Manager**: Orchestrates multi-round debates between agents
@@ -42,7 +42,7 @@ The system consists of four main layers:
 ### Prerequisites
 - Python 3.10 or higher
 - 32-64GB RAM (recommended for local LLM models)
-- GPU with CUDA support (optional, for faster sentiment analysis)
+- GPU with CUDA support (optional, Local Agents with Ollama)
 
 ### Setup
 
@@ -85,35 +85,17 @@ NEWSAPI_KEY=your_newsapi_key
 
 ## Usage
 
-### Quick Start
-
 Analyze a single stock:
 
 ```powershell
 python -m src.main TSLA
 ```
 
-### Python API
-
-```python
-from src.main import ECassanSystem
-
-# Initialize system
-system = ECassanSystem(use_finbert=True)
-
-# Analyze a stock
-result = system.analyze_stock('AAPL')
-
-# Get formatted signal
-signal_text = system.quick_analysis('AAPL')
-print(signal_text)
-```
-
 ## Configuration
 
 Edit `config/config.yaml` to customize:
 
-- Agent weights and roles
+- Agent weights and roles (0-1)
 - LLM model selection
 - Data source preferences
 - Debate parameters
@@ -163,7 +145,6 @@ E-Cassan/
 **Edgar Malevic**  
 Student ID: L00148202  
 Email: L00148202@atu.ie  
-GitHub: [@EsMM27](https://github.com/EsMM27)
 
 ---
 
