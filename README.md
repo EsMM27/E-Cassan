@@ -1,5 +1,3 @@
-# E-Cassan: AI-Driven Market Sentiment and Trading Agents
-
 ## Overview
 
 E-Cassan is an advanced AI-driven system that autonomously analyzes financial markets by interpreting company news, earnings data, and global geopolitical events to produce transparent, evidence-based trading indicators. The system uses a multi-agent architecture where specialized AI agents collaborate, debate, and reach consensus on investment decisions.
