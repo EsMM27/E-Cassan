@@ -429,6 +429,8 @@ class StockDataCollector:
         
         # Get price data with technical indicators
         price_data = self.get_stock_data(ticker, period=period)
+        # Technical indicators must be computed oldest -> newest to avoid NaN values on latest row.
+        price_data = price_data.sort_index(ascending=True)
         price_data_with_indicators = self.calculate_technical_indicators(price_data)
         
         # Get company info

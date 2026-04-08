@@ -11,7 +11,7 @@ from .stock_data import StockDataCollector
 from .news_data import NewsDataCollector
 from .financial_data import FinancialDataCollector
 from ..config import config
-from ..utils import ensure_dir, save_json
+from ..utils import ensure_dir, save_json, load_json
 
 
 class DataIngestionManager:
@@ -45,6 +45,12 @@ class DataIngestionManager:
             Dictionary with all collected data
         """
         logger.info(f"Starting complete data ingestion for {ticker}")
+
+        # Reuse complete cached dataset when available to reduce repeated API calls.
+        cache_file = self.cache_dir / f"{ticker}_complete_data.json"
+        if cache_file.exists():
+            logger.info(f"Using cached complete dataset for {ticker}: {cache_file}")
+            return load_json(cache_file)
         
         # Collect stock data
         logger.info("Collecting stock data...")
@@ -84,8 +90,7 @@ class DataIngestionManager:
         }
         
         # Save complete dataset
-        output_file = self.cache_dir / f"{ticker}_complete_data.json"
-        save_json(result, output_file)
+        save_json(result, cache_file)
         
         logger.info(f"Complete data ingestion finished for {ticker}")
         logger.info(f"Total news articles: {result['metadata']['total_news_articles']}")
