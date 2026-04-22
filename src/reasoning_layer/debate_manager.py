@@ -68,12 +68,21 @@ class DebateManager:
         self.reasoning_logger = logger_instance or ReasoningLogger()
         
         # Get configuration
-        self.max_rounds = config.reasoning_config.get('max_debate_rounds', 3)
-        self.consensus_threshold = config.reasoning_config.get('consensus_threshold', 0.75)
-        self.enable_logging = config.reasoning_config.get('enable_logging', True)
+        reasoning_config = config.reasoning_config
+        self.max_rounds = int(reasoning_config.get('max_debate_rounds', reasoning_config.get('debate_rounds', 3)))
+        self.consensus_threshold = float(reasoning_config.get('consensus_threshold', 0.75))
+        self.enable_logging = reasoning_config.get('enable_logging', True)
+        self.confidence_divergence_threshold = float(reasoning_config.get('confidence_divergence_threshold', 0.4))
+        self.high_confidence_threshold = float(reasoning_config.get('high_confidence_threshold', 0.7))
+        self.low_confidence_threshold = float(reasoning_config.get('low_confidence_threshold', 0.4))
         
         logger.info(f"DebateManager initialized with {len(agents)} agents")
-        logger.info(f"Max debate rounds: {self.max_rounds}, Consensus threshold: {self.consensus_threshold}")
+        logger.info(
+            "Max debate rounds: {}, Consensus threshold: {}, Confidence divergence threshold: {}",
+            self.max_rounds,
+            self.consensus_threshold,
+            self.confidence_divergence_threshold
+        )
     
     def calculate_consensus(self, responses: List[AgentResponse]) -> float:
         """
@@ -166,12 +175,18 @@ class DebateManager:
             confidences = [r.confidence for r in responses]
             confidence_spread = max(confidences) - min(confidences)
             
-            if confidence_spread > 0.4:
+            if confidence_spread > self.confidence_divergence_threshold:
                 disagreements.append({
                     'type': 'confidence_divergence',
                     'description': f"High confidence spread: {confidence_spread:.2f}",
-                    'high_confidence': [r.agent_name for r in responses if r.confidence > 0.7],
-                    'low_confidence': [r.agent_name for r in responses if r.confidence < 0.4]
+                    'high_confidence': [
+                        r.agent_name for r in responses
+                        if r.confidence > self.high_confidence_threshold
+                    ],
+                    'low_confidence': [
+                        r.agent_name for r in responses
+                        if r.confidence < self.low_confidence_threshold
+                    ]
                 })
         
         return disagreements

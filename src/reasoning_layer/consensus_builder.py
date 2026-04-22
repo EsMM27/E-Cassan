@@ -266,6 +266,56 @@ class ConsensusBuilder:
             'agent_count': len(responses)
         }
 
+    def extract_debate_trace(self, debate_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract compact, round-by-round debate trace from debate results.
+
+        Args:
+            debate_result: Result from DebateManager
+
+        Returns:
+            List of debate rounds with per-agent exchanges
+        """
+        trace: List[Dict[str, Any]] = []
+        rounds = debate_result.get('rounds', [])
+
+        for round_data in rounds:
+            round_number = round_data.get('round_number', 0)
+            if round_number == 0:
+                continue
+
+            debates = round_data.get('debates', [])
+            if not debates:
+                continue
+
+            exchanges = []
+            for debate in debates:
+                previous_position = debate.get('previous_position', {})
+                new_position = debate.get('new_position', {})
+                exchanges.append({
+                    'agent': debate.get('agent'),
+                    'previous_position': {
+                        'recommendation': previous_position.get('recommendation'),
+                        'confidence': previous_position.get('confidence')
+                    },
+                    'new_position': {
+                        'recommendation': new_position.get('recommendation'),
+                        'confidence': new_position.get('confidence')
+                    },
+                    'changed': debate.get('changed', False),
+                    'rebuttals': debate.get('rebuttals', []),
+                    'supporting_evidence': debate.get('supporting_evidence', []),
+                    'concessions': debate.get('concessions', [])
+                })
+
+            trace.append({
+                'round_number': round_number,
+                'consensus_level': round_data.get('consensus_level', 0.0),
+                'exchanges': exchanges
+            })
+
+        return trace
+
     def aggregate_price_levels(
         self,
         responses: List[AgentResponse],
@@ -373,6 +423,7 @@ class ConsensusBuilder:
         
         # Aggregate analysis
         aggregated = self.aggregate_analysis(responses)
+        debate_trace = self.extract_debate_trace(debate_result)
         
         # Compile final report
         report = {
@@ -381,6 +432,7 @@ class ConsensusBuilder:
             'timestamp': debate_result.get('timestamp'),
             'consensus': consensus,
             'aggregated_analysis': aggregated,
+            'debate_trace': debate_trace,
             'debate_summary': {
                 'total_rounds': debate_result.get('total_rounds'),
                 'participating_agents': len(responses)
