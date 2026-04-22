@@ -4,9 +4,8 @@ Collects and processes news articles related to stocks and markets
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
-from bs4 import BeautifulSoup
 from loguru import logger
 
 from ..config import config
@@ -156,53 +155,6 @@ class NewsDataCollector:
             logger.error(f"Error fetching Finnhub news: {e}")
             return []
     
-    def get_yahoo_finance_news(self, ticker: str, max_articles: int = 20) -> List[Dict[str, Any]]:
-        """
-        Scrape news from Yahoo Finance (fallback method)
-        
-        Args:
-            ticker: Stock ticker symbol
-            max_articles: Maximum articles to retrieve
-        
-        Returns:
-            List of news articles
-        """
-        try:
-            url = f"https://finance.yahoo.com/quote/{ticker}/news"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # This is a simplified parser - Yahoo's structure may change
-            articles = []
-            news_items = soup.find_all('div', class_='Ov(h)', limit=max_articles)
-            
-            for item in news_items:
-                title_elem = item.find('h3')
-                link_elem = item.find('a')
-                
-                if title_elem and link_elem:
-                    articles.append({
-                        'source': 'Yahoo Finance',
-                        'title': title_elem.text.strip(),
-                        'description': '',
-                        'content': '',
-                        'url': f"https://finance.yahoo.com{link_elem.get('href', '')}",
-                        'published_at': datetime.now().isoformat()
-                    })
-            
-            logger.info(f"Retrieved {len(articles)} articles from Yahoo Finance for {ticker}")
-            return articles
-        
-        except Exception as e:
-            logger.error(f"Error scraping Yahoo Finance news: {e}")
-            return []
-    
     def collect_all_news(
         self,
         ticker: str,
@@ -248,11 +200,6 @@ class NewsDataCollector:
             to_date=to_date
         )
         all_articles.extend(finnhub_articles)
-        
-        # Collect from Yahoo Finance (fallback)
-        if len(all_articles) < 10:
-            yahoo_articles = self.get_yahoo_finance_news(ticker, max_articles=max_per_source)
-            all_articles.extend(yahoo_articles)
         
         # Remove duplicates based on title
         seen_titles = set()
