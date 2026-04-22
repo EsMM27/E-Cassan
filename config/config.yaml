@@ -1,6 +1,6 @@
 ﻿system:
   name: E-Cassan Trading Agent System
-  version: 0.1.0
+  version: 0.3.5
   environment: development
 
 agents:
@@ -40,6 +40,9 @@ reasoning:
   debate_rounds: 3
   consensus_method: weighted  # Options: weighted, majority, confidence
   consensus_threshold: 0.8
+  confidence_divergence_threshold: 0.4
+  high_confidence_threshold: 0.7
+  low_confidence_threshold: 0.4
   max_iterations: 5
   timeout_seconds: 300
   
@@ -54,6 +57,7 @@ data_sources:
       - newsapi
       - finnhub
     max_articles: 50
+    prompt_max_articles: 50
     lookback_days: 7
     
   financials:
