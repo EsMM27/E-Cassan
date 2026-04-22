@@ -17,6 +17,14 @@ class DataPipeline:
     
     def __init__(self):
         self.config = config
+
+    def _get_news_prompt_limit(self, default: int) -> int:
+        """Read the prompt article limit from config with a safe fallback."""
+        limit = config.get('data_sources.news.prompt_max_articles', default)
+        try:
+            return int(limit)
+        except (TypeError, ValueError):
+            return default
     
     def clean_text(self, text: str, max_length: int = 5000) -> str:
         """
@@ -109,6 +117,7 @@ class DataPipeline:
             Formatted summary string
         """
         try:
+            max_articles = self._get_news_prompt_limit(max_articles)
             articles = news_data.get('articles', [])[:max_articles]
             
             summary = f"""
