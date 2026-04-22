@@ -20,13 +20,21 @@ class NewsDataCollector:
         self.cache_dir = ensure_dir(cache_dir or config.settings.data_cache_dir)
         self.newsapi_key = config.settings.newsapi_key
         self.finnhub_key = config.settings.finnhub_api_key
+
+    def _get_news_limit(self, default: int) -> int:
+        """Read the news article limit from config with a safe fallback."""
+        limit = config.get('data_sources.news.max_articles', default)
+        try:
+            return int(limit)
+        except (TypeError, ValueError):
+            return default
     
     def get_newsapi_articles(
         self,
         query: str,
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
-        max_articles: int = 50
+        max_articles: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Fetch articles from NewsAPI
@@ -43,6 +51,9 @@ class NewsDataCollector:
         if not self.newsapi_key:
             logger.warning("NewsAPI key not configured")
             return []
+
+        if max_articles is None:
+            max_articles = self._get_news_limit(50)
         
         try:
             # Set default date range if not provided
@@ -197,7 +208,7 @@ class NewsDataCollector:
         ticker: str,
         company_name: Optional[str] = None,
         days_back: int = 7,
-        max_per_source: int = 20
+        max_per_source: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Collect news from all available sources
@@ -212,6 +223,9 @@ class NewsDataCollector:
             Dictionary with all collected news
         """
         logger.info(f"Collecting news for {ticker}")
+
+        if max_per_source is None:
+            max_per_source = self._get_news_limit(20)
         
         from_date, to_date = calculate_date_range(days_back=days_back)
         
