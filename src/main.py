@@ -282,7 +282,7 @@ class ECassanSystem:
         """
         return {
             'system': 'E-Cassan AI Trading Agent System',
-            'version': '0.1.0',
+            'version': '0.3.5',
             'agents': [
                 {
                     'name': agent.name,

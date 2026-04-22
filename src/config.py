@@ -6,7 +6,7 @@ Loads and manages system configuration from YAML and environment variables
 from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from dotenv import load_dotenv
 import os
@@ -14,9 +14,16 @@ import os
 
 class Settings(BaseSettings):
     """System settings loaded from environment variables"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
     
     # API Keys
     openai_api_key: Optional[str] = Field(None, alias="OPENAI_API_KEY")
+    anthropic_api_key: Optional[str] = Field(None, alias="ANTHROPIC_API_KEY")
     alpha_vantage_api_key: Optional[str] = Field(None, alias="ALPHA_VANTAGE_API_KEY")
     finnhub_api_key: Optional[str] = Field(None, alias="FINNHUB_API_KEY")
     newsapi_key: Optional[str] = Field(None, alias="NEWSAPI_KEY")
@@ -41,11 +48,6 @@ class Settings(BaseSettings):
     risk_threshold: float = Field(0.7, alias="RISK_THRESHOLD")
     confidence_threshold: float = Field(0.6, alias="CONFIDENCE_THRESHOLD")
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-
-
 class ConfigManager:
     """Manages configuration from both YAML and environment variables"""
     
