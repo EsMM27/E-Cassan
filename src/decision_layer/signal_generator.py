@@ -44,6 +44,7 @@ class TradingSignal(BaseModel):
     # Full context
     reasoning_summary: str
     individual_agent_views: list[Dict[str, Any]]
+    debate_trace: list[Dict[str, Any]] = Field(default_factory=list)
 
 
 class SignalGenerator:
@@ -334,7 +335,8 @@ class SignalGenerator:
             debate_rounds=consensus_report.get('debate_summary', {}).get('total_rounds', 0),
             methodology=consensus.get('method', 'weighted'),
             reasoning_summary=reasoning_summary,
-            individual_agent_views=consensus_report.get('individual_positions', [])
+            individual_agent_views=consensus_report.get('individual_positions', []),
+            debate_trace=consensus_report.get('debate_trace', [])
         )
         
         logger.info(f"Signal generated: {signal} with {confidence:.1%} confidence")
