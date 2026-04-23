@@ -98,8 +98,8 @@ decision:
     
   confidence_levels:
     high: 0.8
-    medium: 0.6
-    low: 0.4
+    medium: 0.5
+    low: 0.2
 
 logging:
   level: INFO
