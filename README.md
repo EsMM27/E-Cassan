@@ -1,6 +1,8 @@
 ## Overview
 
-E-Cassan is an advanced AI-driven system that autonomously analyzes financial markets by interpreting company news, earnings data, and global geopolitical events to produce transparent, evidence-based trading indicators. The system uses a multi-agent architecture where specialized AI agents collaborate, debate, and reach consensus on investment decisions.
+E-Cassan is an AI-driven system that autonomously analyzes financial markets by interpreting company news, earnings data, and global geopolitical events to produce transparent, evidence-based trading indicators. The system uses a multi-agent architecture where specialized AI agents collaborate, debate, and reach consensus on investment decisions.
+
+<img width="938" height="486" alt="image" src="https://github.com/user-attachments/assets/e88bd931-b1d1-469c-82b3-4fbb1dab58a0" />
 
 ## Key Features
 
