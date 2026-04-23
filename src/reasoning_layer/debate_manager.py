@@ -151,23 +151,35 @@ class DebateManager:
         sell_agents = [r for r in responses if r.recommendation == 'SELL']
         short_agents = [r for r in responses if r.recommendation == 'SHORT']
         hold_agents = [r for r in responses if r.recommendation == 'HOLD']
-        
-        # Check for conflicting recommendations
-        if len(buy_agents) > 0 and (len(sell_agents) > 0 or len(short_agents) > 0):
-            description = f"{len(buy_agents)} agents recommend BUY while "
-            if len(sell_agents) > 0 and len(short_agents) > 0:
-                description += f"{len(sell_agents)} recommend SELL and {len(short_agents)} recommend SHORT"
-            elif len(sell_agents) > 0:
-                description += f"{len(sell_agents)} recommend SELL"
-            else:
-                description += f"{len(short_agents)} recommend SHORT"
-            
+
+        recommendation_groups = {
+            'BUY': buy_agents,
+            'SELL': sell_agents,
+            'SHORT': short_agents,
+            'HOLD': hold_agents,
+        }
+        non_empty_groups = {
+            rec: agents
+            for rec, agents in recommendation_groups.items()
+            if agents
+        }
+
+        # Any split recommendation should trigger debate.
+        if len(non_empty_groups) > 1:
+            description = "Recommendation split: " + ", ".join(
+                f"{len(agents)} {rec}" for rec, agents in non_empty_groups.items()
+            )
             disagreements.append({
                 'type': 'recommendation_conflict',
                 'description': description,
                 'buy_agents': [a.agent_name for a in buy_agents],
                 'sell_agents': [a.agent_name for a in sell_agents],
-                'short_agents': [a.agent_name for a in short_agents]
+                'short_agents': [a.agent_name for a in short_agents],
+                'hold_agents': [a.agent_name for a in hold_agents],
+                'recommendation_breakdown': {
+                    rec: [a.agent_name for a in agents]
+                    for rec, agents in non_empty_groups.items()
+                }
             })
         
         # Check for confidence spread
@@ -425,9 +437,11 @@ Format as JSON:
             
             all_rounds.append(debate_round)
             
-            # Check for early consensus
+            # Stop early only when recommendation disagreements are resolved and
+            # consensus is at/above configured threshold.
             disagreements = self.identify_disagreements(current_responses)
-            if not disagreements:
+            current_consensus = self.calculate_consensus(current_responses)
+            if not disagreements and current_consensus >= self.consensus_threshold:
                 logger.info(f"Consensus reached in round {round_num}")
                 break
         
