@@ -23,6 +23,27 @@ class StockDataCollector:
         self.cache_dir = ensure_dir(cache_dir or config.settings.data_cache_dir)
         self.alpha_vantage_key = config.settings.alpha_vantage_api_key
         self.finnhub_key = config.settings.finnhub_api_key
+
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        """Convert API values to float and tolerate placeholder strings."""
+        if value is None:
+            return default
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"", "none", "n/a", "na", "null", "-"}:
+                return default
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        """Convert API values to int via safe float conversion."""
+        return int(StockDataCollector._safe_float(value, float(default)))
     
     def get_stock_data(
         self,
@@ -304,7 +325,9 @@ class StockDataCollector:
                 logger.warning(f"Alpha Vantage note: {data['Note']}")
                 return {}
             
-            if not data or data.get('Symbol') != ticker:
+            response_symbol = str(data.get('Symbol', '')).strip().upper()
+            requested_symbol = str(ticker).strip().upper()
+            if not data or (response_symbol and response_symbol != requested_symbol):
                 logger.warning(f"No company data found for {ticker}")
                 logger.debug(f"Response: {str(data)[:500]}")
                 return {}
@@ -315,21 +338,21 @@ class StockDataCollector:
                 'name': data.get('Name', ''),
                 'sector': data.get('Sector', ''),
                 'industry': data.get('Industry', ''),
-                'market_cap': int(data.get('MarketCapitalization', 0) or 0),
-                'employees': int(data.get('FullTimeEmployees', 0) or 0),
+                'market_cap': self._safe_int(data.get('MarketCapitalization')),
+                'employees': self._safe_int(data.get('FullTimeEmployees')),
                 'description': data.get('Description', ''),
                 'website': data.get('Website', ''),
-                'current_price': float(data.get('PreviousClose', 0) or 0),
-                'previous_close': float(data.get('PreviousClose', 0) or 0),
-                'fifty_two_week_high': float(data.get('52WeekHigh', 0) or 0),
-                'fifty_two_week_low': float(data.get('52WeekLow', 0) or 0),
-                'pe_ratio': float(data.get('TrailingPE', 0) or 0),
-                'forward_pe': float(data.get('ForwardPE', 0) or 0),
-                'peg_ratio': float(data.get('PEGRatio', 0) or 0),
-                'dividend_yield': float(data.get('DividendYield', 0) or 0),
-                'beta': float(data.get('Beta', 0) or 0),
-                'profit_margins': float(data.get('ProfitMargin', 0) or 0),
-                'revenue_growth': float(data.get('RevenuePerShareTTM', 0) or 0),
+                'current_price': self._safe_float(data.get('PreviousClose')),
+                'previous_close': self._safe_float(data.get('PreviousClose')),
+                'fifty_two_week_high': self._safe_float(data.get('52WeekHigh')),
+                'fifty_two_week_low': self._safe_float(data.get('52WeekLow')),
+                'pe_ratio': self._safe_float(data.get('TrailingPE')),
+                'forward_pe': self._safe_float(data.get('ForwardPE')),
+                'peg_ratio': self._safe_float(data.get('PEGRatio')),
+                'dividend_yield': self._safe_float(data.get('DividendYield')),
+                'beta': self._safe_float(data.get('Beta')),
+                'profit_margins': self._safe_float(data.get('ProfitMargin')),
+                'revenue_growth': self._safe_float(data.get('RevenuePerShareTTM')),
             }
             
             logger.info(f"Successfully retrieved company info from Alpha Vantage for {ticker}")
